@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+dist/
+coverage/
+test-results/
+playwright-report/
+*.tsbuildinfo
+.env*
+!.env.example
+.vercel
+apps/web/e2e/fixtures/*.mp4
+apps/web/e2e/fixtures/*.mp3
+apps/web/e2e/fixtures/*.m4a

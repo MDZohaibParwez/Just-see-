@@ -1,0 +1,460 @@
+import { EFFECTS_BY_TYPE, resolveParams, type EffectDef } from "../effects/catalog";
+import { TRANSITIONS_BY_TYPE } from "../transitions/catalog";
+import { identity, placementMatrix, scaling, uvRotationMatrix, multiply, translation, type Mat3 } from "../layout";
+import type { FramePlan, MediaSource, TextSource, VisualLayer } from "../resolve";
+import { drawText, textRasterKey, type Canvas2D } from "../text/raster";
+import { FULL_VS, QUAD_FS, QUAD_VS, effectFragment, transitionFragment } from "./shaders";
+
+export type GLCanvas = HTMLCanvasElement | OffscreenCanvas;
+
+export interface ResolvedImage {
+  image: TexImageSource;
+  /** Rotation (degrees) the compositor still has to apply to the pixels. */
+  rotation: number;
+  /** Changes whenever the pixels change; used to skip re-uploads. */
+  version: number | string;
+}
+
+/** Supplies decoded pixels for media sources. */
+export interface SourceProvider {
+  getImage(source: MediaSource): ResolvedImage | null;
+}
+
+interface Program {
+  prog: WebGLProgram;
+  uniforms: Map<string, WebGLUniformLocation | null>;
+}
+
+interface Target {
+  fbo: WebGLFramebuffer;
+  tex: WebGLTexture;
+}
+
+interface CachedTexture {
+  tex: WebGLTexture;
+  version: number | string;
+}
+
+function parseColor(hex: string): [number, number, number] {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m || !m[1]) return [0, 0, 0];
+  const n = parseInt(m[1], 16);
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+}
+
+/**
+ * WebGL2 compositor. Renders a FramePlan into its canvas. The same code runs
+ * for preview and export so both produce identical pixels.
+ */
+export class Compositor {
+  readonly canvas: GLCanvas;
+  private gl: WebGL2RenderingContext;
+  private vao: WebGLVertexArrayObject;
+  private quadProg: Program;
+  private effectProgs = new Map<string, Program>();
+  private transitionProgs = new Map<string, Program>();
+  private targets: Target[] = [];
+  private targetW = 0;
+  private targetH = 0;
+  private textures = new Map<string, CachedTexture>();
+  private textCanvases = new Map<string, { canvas: GLCanvas; ctx: Canvas2D; key: string }>();
+  private usedThisFrame = new Set<string>();
+
+  constructor(canvas: GLCanvas, opts: { preserveDrawingBuffer?: boolean } = {}) {
+    this.canvas = canvas;
+    const gl = canvas.getContext("webgl2", {
+      alpha: false,
+      antialias: false,
+      premultipliedAlpha: true,
+      preserveDrawingBuffer: opts.preserveDrawingBuffer ?? false,
+      powerPreference: "high-performance",
+    }) as WebGL2RenderingContext | null;
+    if (!gl) throw new Error("WebGL2 is not available in this browser");
+    this.gl = gl;
+    const vao = gl.createVertexArray();
+    const buf = gl.createBuffer();
+    if (!vao || !buf) throw new Error("Could not create WebGL buffers");
+    this.vao = vao;
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+    this.quadProg = this.compile(QUAD_VS, QUAD_FS);
+  }
+
+  get width(): number {
+    return this.canvas.width;
+  }
+
+  get height(): number {
+    return this.canvas.height;
+  }
+
+  resize(width: number, height: number): void {
+    const w = Math.max(2, Math.round(width));
+    const h = Math.max(2, Math.round(height));
+    if (this.canvas.width !== w) this.canvas.width = w;
+    if (this.canvas.height !== h) this.canvas.height = h;
+  }
+
+  private compile(vs: string, fs: string): Program {
+    const gl = this.gl;
+    const make = (type: number, srcText: string) => {
+      const sh = gl.createShader(type);
+      if (!sh) throw new Error("Could not create shader");
+      gl.shaderSource(sh, srcText);
+      gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+        const log = gl.getShaderInfoLog(sh);
+        gl.deleteShader(sh);
+        throw new Error(`Shader compile failed: ${log ?? "unknown"}`);
+      }
+      return sh;
+    };
+    const v = make(gl.VERTEX_SHADER, vs);
+    const f = make(gl.FRAGMENT_SHADER, fs);
+    const prog = gl.createProgram();
+    if (!prog) throw new Error("Could not create program");
+    gl.attachShader(prog, v);
+    gl.attachShader(prog, f);
+    gl.bindAttribLocation(prog, 0, "aPos");
+    gl.linkProgram(prog);
+    gl.deleteShader(v);
+    gl.deleteShader(f);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      throw new Error(`Program link failed: ${gl.getProgramInfoLog(prog) ?? "unknown"}`);
+    }
+    return { prog, uniforms: new Map() };
+  }
+
+  private loc(p: Program, name: string): WebGLUniformLocation | null {
+    if (!p.uniforms.has(name)) p.uniforms.set(name, this.gl.getUniformLocation(p.prog, name));
+    return p.uniforms.get(name) ?? null;
+  }
+
+  private effectProgram(def: EffectDef): Program {
+    let p = this.effectProgs.get(def.type);
+    if (!p) {
+      p = this.compile(FULL_VS, effectFragment(def.params.map((x) => x.key), def.glsl));
+      this.effectProgs.set(def.type, p);
+    }
+    return p;
+  }
+
+  private transitionProgram(type: string): Program | undefined {
+    const def = TRANSITIONS_BY_TYPE.get(type) ?? TRANSITIONS_BY_TYPE.get("crossfade");
+    if (!def) return undefined;
+    let p = this.transitionProgs.get(def.type);
+    if (!p) {
+      p = this.compile(FULL_VS, transitionFragment(def.glsl));
+      this.transitionProgs.set(def.type, p);
+    }
+    return p;
+  }
+
+  /** Compile every effect and transition; returns failures (for tests). */
+  compileAll(effectTypes: readonly string[], transitionTypes: readonly string[]): string[] {
+    const errors: string[] = [];
+    for (const t of effectTypes) {
+      const def = EFFECTS_BY_TYPE.get(t);
+      try {
+        if (!def) throw new Error("unknown");
+        this.effectProgram(def);
+      } catch (e) {
+        errors.push(`effect ${t}: ${(e as Error).message}`);
+      }
+    }
+    for (const t of transitionTypes) {
+      try {
+        if (!TRANSITIONS_BY_TYPE.has(t)) throw new Error("unknown");
+        this.transitionProgram(t);
+      } catch (e) {
+        errors.push(`transition ${t}: ${(e as Error).message}`);
+      }
+    }
+    return errors;
+  }
+
+  private newTexture(): WebGLTexture {
+    const gl = this.gl;
+    const tex = gl.createTexture();
+    if (!tex) throw new Error("Could not create texture");
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return tex;
+  }
+
+  private ensureTargets(w: number, h: number): void {
+    if (this.targetW === w && this.targetH === h && this.targets.length) return;
+    const gl = this.gl;
+    for (const t of this.targets) {
+      gl.deleteFramebuffer(t.fbo);
+      gl.deleteTexture(t.tex);
+    }
+    this.targets = [];
+    for (let i = 0; i < 5; i++) {
+      const tex = this.newTexture();
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      const fbo = gl.createFramebuffer();
+      if (!fbo) throw new Error("Could not create framebuffer");
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      this.targets.push({ fbo, tex });
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.targetW = w;
+    this.targetH = h;
+  }
+
+  private target(i: number): Target {
+    const t = this.targets[i];
+    if (!t) throw new Error("Render target missing");
+    return t;
+  }
+
+  private upload(key: string, image: TexImageSource, version: number | string): WebGLTexture {
+    const gl = this.gl;
+    this.usedThisFrame.add(key);
+    let cached = this.textures.get(key);
+    if (cached && cached.version === version) return cached.tex;
+    if (!cached) {
+      cached = { tex: this.newTexture(), version: -1 };
+      this.textures.set(key, cached);
+    }
+    gl.bindTexture(gl.TEXTURE_2D, cached.tex);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    cached.version = version;
+    return cached.tex;
+  }
+
+  private textTexture(src: TextSource, w: number, h: number): WebGLTexture {
+    let entry = this.textCanvases.get(src.clipId);
+    if (!entry) {
+      const canvas: GLCanvas =
+        typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(w, h) : Object.assign(document.createElement("canvas"), { width: w, height: h });
+      const ctx = canvas.getContext("2d") as Canvas2D | null;
+      if (!ctx) throw new Error("2D canvas is not available");
+      entry = { canvas, ctx, key: "" };
+      this.textCanvases.set(src.clipId, entry);
+    }
+    const key = textRasterKey(src.clip, src.anim, w, h);
+    if (entry.key !== key) {
+      if (entry.canvas.width !== w) entry.canvas.width = w;
+      if (entry.canvas.height !== h) entry.canvas.height = h;
+      drawText(entry.ctx, src.clip, src.anim, w, h);
+      entry.key = key;
+    }
+    return this.upload(`text:${src.clipId}`, entry.canvas, key);
+  }
+
+  private drawQuad(p: Program, tex: WebGLTexture, matrix: Mat3, uv: Mat3, opacity: number, w: number, h: number): void {
+    const gl = this.gl;
+    gl.useProgram(p.prog);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1i(this.loc(p, "uTex"), 0);
+    gl.uniformMatrix3fv(this.loc(p, "uMatrix"), false, matrix);
+    gl.uniformMatrix3fv(this.loc(p, "uUvMatrix"), false, uv);
+    gl.uniform2f(this.loc(p, "uRes"), w, h);
+    gl.uniform1f(this.loc(p, "uOpacity"), opacity);
+    gl.bindVertexArray(this.vao);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  private fullscreen(w: number, h: number): Mat3 {
+    return multiply(translation(w / 2, h / 2), scaling(w, h));
+  }
+
+  /** UV matrix for sampling an FBO (stored bottom-up) with top-down coordinates. */
+  private fboUv(): Mat3 {
+    return [1, 0, 0, 0, -1, 0, 0, 1, 1];
+  }
+
+  /**
+   * Draw one visual layer (source + effects) into a render target at full
+   * opacity. Returns the index of the target holding the result.
+   */
+  private renderLayer(layer: VisualLayer, provider: SourceProvider, w: number, h: number, free: [number, number]): number | null {
+    const gl = this.gl;
+    let tex: WebGLTexture;
+    let matrix: Mat3;
+    let uv: Mat3 = identity();
+    const src = layer.source;
+    if (src.kind === "text") {
+      tex = this.textTexture(src, w, h);
+      matrix = this.fullscreen(w, h);
+    } else {
+      const img = provider.getImage(src);
+      if (!img) return null;
+      tex = this.upload(src.kind === "image" ? `img:${src.assetId}` : `vid:${src.clipId}`, img.image, img.version);
+      matrix = placementMatrix(layer.transform, src.width, src.height, w, h);
+      if (img.rotation % 360 !== 0) uv = uvRotationMatrix(img.rotation);
+    }
+    let [a, b] = free;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.target(a).fbo);
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.disable(gl.BLEND);
+    this.drawQuad(this.quadProg, tex, matrix, uv, 1, w, h);
+    for (const fx of layer.effects) {
+      const def = EFFECTS_BY_TYPE.get(fx.type);
+      if (!def) continue;
+      const prog = this.effectProgram(def);
+      const params = resolveParams(def, fx.params);
+      const passes = def.passes ?? 1;
+      for (let pass = 0; pass < passes; pass++) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.target(b).fbo);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.useProgram(prog.prog);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.target(a).tex);
+        gl.uniform1i(this.loc(prog, "uTex"), 0);
+        gl.uniform2f(this.loc(prog, "uRes"), w, h);
+        gl.uniform1f(this.loc(prog, "uTime"), layer.localTime);
+        gl.uniform1i(this.loc(prog, "uPass"), pass);
+        for (const [k, v] of Object.entries(params)) gl.uniform1f(this.loc(prog, `p_${k}`), v);
+        gl.bindVertexArray(this.vao);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        [a, b] = [b, a];
+      }
+    }
+    return a;
+  }
+
+  private compositeOnto(accum: number, from: number, opacity: number, w: number, h: number): void {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.target(accum).fbo);
+    gl.viewport(0, 0, w, h);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    this.drawQuad(this.quadProg, this.target(from).tex, this.fullscreen(w, h), this.fboUv(), opacity, w, h);
+    gl.disable(gl.BLEND);
+  }
+
+  /** Render a frame plan into the canvas. */
+  render(plan: FramePlan, provider: SourceProvider): void {
+    const gl = this.gl;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    this.ensureTargets(w, h);
+    this.usedThisFrame.clear();
+    // Target 0 accumulates the frame; 1-4 are scratch.
+    const ACC = 0;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.target(ACC).fbo);
+    gl.viewport(0, 0, w, h);
+    const [r, g, bl] = parseColor(plan.background);
+    gl.clearColor(r, g, bl, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    for (const layer of plan.layers) {
+      if (layer.kind === "visual") {
+        const out = this.renderLayer(layer, provider, w, h, [1, 2]);
+        if (out !== null) this.compositeOnto(ACC, out, layer.opacity, w, h);
+        continue;
+      }
+      // Transition: render both sides, then mix.
+      const fromOut = this.renderLayer(layer.from, provider, w, h, [1, 2]);
+      const fromIdx = fromOut ?? 1;
+      if (fromOut === null) this.clearTarget(1, w, h);
+      // Keep the "from" result safe in target 3.
+      this.copy(fromIdx, 3, w, h);
+      const toOut = this.renderLayer(layer.to, provider, w, h, [1, 2]);
+      const toIdx = toOut ?? 1;
+      if (toOut === null) this.clearTarget(1, w, h);
+      const prog = this.transitionProgram(layer.type);
+      if (!prog) continue;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.target(4).fbo);
+      gl.viewport(0, 0, w, h);
+      gl.disable(gl.BLEND);
+      gl.useProgram(prog.prog);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.target(3).tex);
+      gl.uniform1i(this.loc(prog, "uFrom"), 0);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.target(toIdx).tex);
+      gl.uniform1i(this.loc(prog, "uTo"), 1);
+      gl.uniform2f(this.loc(prog, "uRes"), w, h);
+      gl.uniform1f(this.loc(prog, "uTime"), layer.to.localTime);
+      gl.uniform1f(this.loc(prog, "progress"), layer.progress);
+      gl.bindVertexArray(this.vao);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      gl.activeTexture(gl.TEXTURE0);
+      const opacity = layer.from.opacity * (1 - layer.progress) + layer.to.opacity * layer.progress;
+      this.compositeOnto(ACC, 4, opacity, w, h);
+    }
+
+    // Present.
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, w, h);
+    gl.disable(gl.BLEND);
+    this.drawQuad(this.quadProg, this.target(ACC).tex, this.fullscreen(w, h), this.fboUv(), 1, w, h);
+    this.evictUnused();
+  }
+
+  private clearTarget(i: number, w: number, h: number): void {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.target(i).fbo);
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+
+  private copy(from: number, to: number, w: number, h: number): void {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.target(to).fbo);
+    gl.viewport(0, 0, w, h);
+    gl.disable(gl.BLEND);
+    this.drawQuad(this.quadProg, this.target(from).tex, this.fullscreen(w, h), this.fboUv(), 1, w, h);
+  }
+
+  /** Free textures for clips that left the screen, so memory stays flat. */
+  private evictUnused(): void {
+    if (this.textures.size < 24) return;
+    for (const [key, t] of this.textures) {
+      if (!this.usedThisFrame.has(key)) {
+        this.gl.deleteTexture(t.tex);
+        this.textures.delete(key);
+      }
+    }
+  }
+
+  /** Read back the current frame as RGBA (top row first). For tests. */
+  readPixels(): Uint8Array {
+    const gl = this.gl;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const out = new Uint8Array(w * h * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.target(0).fbo);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, out);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    // Flip rows: the FBO is stored bottom-up.
+    const row = w * 4;
+    const flipped = new Uint8Array(out.length);
+    for (let y = 0; y < h; y++) flipped.set(out.subarray((h - 1 - y) * row, (h - y) * row), y * row);
+    return flipped;
+  }
+
+  dispose(): void {
+    const gl = this.gl;
+    for (const t of this.textures.values()) gl.deleteTexture(t.tex);
+    for (const t of this.targets) {
+      gl.deleteFramebuffer(t.fbo);
+      gl.deleteTexture(t.tex);
+    }
+    for (const p of [...this.effectProgs.values(), ...this.transitionProgs.values(), this.quadProg]) gl.deleteProgram(p.prog);
+    this.textures.clear();
+    this.targets = [];
+    this.effectProgs.clear();
+    this.transitionProgs.clear();
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
+  }
+}

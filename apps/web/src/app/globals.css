@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+/* Just See design tokens. Dark is the default; light via data-theme. */
+:root {
+  --bg: #0c0d10;
+  --surface: #15171c;
+  --surface-2: #1e2128;
+  --surface-3: #2a2e37;
+  --border: #2c3039;
+  --text: #f2f3f5;
+  --muted: #9aa1ad;
+  --accent: #ff8a1f;
+  --accent-strong: #ffa24d;
+  --accent-contrast: #1a0d00;
+  --danger: #ff5a5f;
+  --track-main: #273a52;
+  --track-text: #4a3366;
+  --track-audio: #1f4a3e;
+  --track-video: #3d3a1f;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #f6f6f8;
+  --surface: #ffffff;
+  --surface-2: #eef0f3;
+  --surface-3: #e1e4ea;
+  --border: #d7dbe2;
+  --text: #14161a;
+  --muted: #5d6573;
+  --accent: #e0700a;
+  --accent-strong: #c85f00;
+  --accent-contrast: #ffffff;
+  --danger: #d6363c;
+  --track-main: #cfe0f5;
+  --track-text: #e6d9f7;
+  --track-audio: #cdeee2;
+  --track-video: #f1eccb;
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--border);
+  --color-fg: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-danger: var(--danger);
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Devanagari", "Noto Nastaliq Urdu",
+    "Noto Sans Gujarati", sans-serif;
+}
+
+html,
+body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+button {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+input[type="range"] {
+  accent-color: var(--accent);
+  height: 28px;
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.sheet-in {
+  animation: sheet-in 160ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-in {
+    animation: none;
+  }
+}
