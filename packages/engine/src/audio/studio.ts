@@ -1,5 +1,5 @@
 import { barSeconds, stepSeconds, type AudioSession, type Instrument, type Note, type Pattern, type StudioTrack } from "@just-see/schema";
-import { applyBiquad, biquad, reverb as reverbFx, type Channels } from "./dsp";
+import { applyBiquad, biquad, limit, reverb as reverbFx, type Channels } from "./dsp";
 import { runAudioChain } from "./fx";
 import type { DspModule } from "./wasm";
 import type { Pcm } from "../media/audio";
@@ -412,8 +412,8 @@ export async function renderStudio(
   let out: Channels = master;
   if (session.masterFx.some((f) => f.enabled)) out = await runAudioChain(out, sr, session.masterFx, dsp);
   const mg = Math.pow(10, session.masterDb / 20);
-  const L = out[0]!.map((v) => Math.tanh(v * mg * 0.9) / 0.9);
-  const R = (out[1] ?? out[0]!).map((v) => Math.tanh(v * mg * 0.9) / 0.9);
+  // Gentle soft clip, then a limiter so the true peak stays under -1 dBTP.
+  const [L, R] = limit([out[0]!.map((v) => 0.98 * Math.tanh((v * mg) / 0.98)), (out[1] ?? out[0]!).map((v) => 0.98 * Math.tanh((v * mg) / 0.98))], sr, -1) as [Float32Array, Float32Array];
   return { sampleRate: sr, channels: [L, R], durationSec: dur, kicks };
 }
 

@@ -59,3 +59,81 @@ test("built-in sound effects and auto duck", async ({ page }) => {
   await page.getByTestId("tool-auto-duck").click();
   await expect.poll(() => page.getByTestId("keyframe-marker").count(), { timeout: 60_000 }).toBeGreaterThan(4);
 });
+
+/** Phase 3 "done when", part 2: a 16-bar beat with sequencer, piano roll and mixer, exported. */
+test("audio studio: build a 16-bar beat, mix it, export WAV and send to video", async ({ page }) => {
+  test.setTimeout(5 * 60 * 1000);
+  await newProject(page);
+  await page.getByTestId("tool-studio").click();
+  await page.getByTestId("studio-new").click();
+  await expect(page.getByTestId("studio-play")).toBeVisible();
+  await page.getByTestId("studio-bars").selectOption("16");
+  await page.getByTestId("studio-bpm").fill("96");
+
+  // Step sequencer: add a snare ghost note and an open hat.
+  await page.getByTestId("step-snare-10").click();
+  await page.getByTestId("step-open-hat-14").click();
+  await expect(page.getByTestId("step-open-hat-14")).toHaveAttribute("aria-pressed", "true");
+
+  // Piano roll: a pluck track with chords.
+  await page.getByTestId("studio-add-track").click();
+  await page.getByTestId("add-track-pluck").click();
+  await page.getByTestId("studio-tab-piano").click();
+  await page.getByTestId("pr-chord").click();
+  // Key A minor (root 9): A4 = 69 at step 0, C5 = 72 at step 16, D5 = 74 at step 32, E5 = 76 at step 48.
+  for (const [pitch, step] of [[69, 0], [72, 16], [74, 32], [76, 48]] as const) await page.getByTestId(`pr-${pitch}-${step}`).click();
+  await expect(page.getByTestId("pr-69-0")).toHaveAttribute("aria-pressed", "true");
+
+  // 808 bass line.
+  await page.getByTestId("studio-add-track").click();
+  await page.getByTestId("add-track-808").click();
+  await page.getByTestId("pr-chord").click(); // chords off for bass
+  for (const step of [0, 6, 16, 22, 32, 38, 48, 54]) await page.getByTestId(`pr-45-${step}`).click();
+
+  // Mixer: reverb on the pluck, mute nothing, check loudness.
+  await page.getByTestId("studio-tab-mixer").click();
+  const rev = page.getByTestId("rev-Pluck");
+  await rev.focus();
+  for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowRight");
+  await expect(page.getByTestId("mixer-Pluck")).toContainText("30%");
+  await page.getByTestId("studio-lufs").click();
+  await expect(page.getByTestId("studio-lufs")).toContainText("LUFS", { timeout: 90_000 });
+
+  // Export WAV and check its length: 16 bars at 96 BPM = 40 s (+ reverb tail).
+  const [download] = await Promise.all([page.waitForEvent("download", { timeout: 120_000 }), page.getByTestId("studio-wav").click()]);
+  const out = path.join(os.tmpdir(), `just-see-beat-${Date.now()}.wav`);
+  await download.saveAs(out);
+  const probe = spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", out], { encoding: "utf8" });
+  const dur = Number(String(probe.stdout).trim());
+  expect(dur).toBeGreaterThan(39.9);
+  expect(dur).toBeLessThan(44);
+  const m = measure(out);
+  expect(m.lufs).toBeGreaterThan(-30);
+  expect(m.peak).toBeLessThan(0.1);
+  fs.rmSync(out, { force: true });
+
+  // Send to the video timeline.
+  await page.getByTestId("studio-send").click();
+  await page.getByTestId("studio-back").click();
+  await page.getByTestId("studio-close").click();
+  await expect(page.getByTestId("track-audio").getByTestId("timeline-clip")).toHaveCount(1, { timeout: 120_000 });
+});
+
+test("mood music templates and sound search", async ({ page }) => {
+  test.setTimeout(3 * 60 * 1000);
+  await newProject(page);
+  await page.getByTestId("tool-studio").click();
+  await page.getByTestId("mood-lofi").click();
+  await expect(page.getByTestId("studio-track-Keys")).toBeVisible();
+  await page.getByTestId("studio-send").click();
+  await expect(page.getByTestId("studio-send")).toHaveText(/./, { timeout: 120_000 });
+  await page.getByTestId("studio-back").click();
+  await page.getByTestId("studio-close").click();
+  await expect(page.getByTestId("track-audio").getByTestId("timeline-clip")).toHaveCount(1, { timeout: 120_000 });
+  await page.getByTestId("tool-sfx").click();
+  await page.getByTestId("sfx-search").fill("ba-dum");
+  await page.getByTestId("add-sfx-ba-dum-tss").click();
+  await page.getByTestId("sfx-search").fill("taali");
+  await page.getByTestId("add-sfx-applause").click();
+  await expect.poll(() => page.getByTestId("track-audio").getByTestId("timeline-clip").count()).toBe(3);
+});

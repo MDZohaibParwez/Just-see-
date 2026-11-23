@@ -1,5 +1,6 @@
 "use client";
 
+import { useStudioUi } from "./StudioScreen";
 import { Icon, type IconName } from "@just-see/ui";
 import { createId, findClip, getAsset, getSequence, isMediaClip, type Project } from "@just-see/schema";
 import { addBgRemoval, autoReframe, addText, deleteSelection, duplicateSelection, freezeFrame, splitAtPlayhead } from "@/lib/actions";
@@ -107,6 +108,7 @@ export function Toolbar({ onImport, onImportMusic }: { onImport: () => void; onI
       { id: "music", icon: "music", label: "music", run: onImportMusic },
       { id: "sfx", icon: "volume", label: "soundEffects", run: open("sfx") },
       { id: "auto-duck", icon: "fade", label: "autoDuck", run: () => void autoDuck() },
+      { id: "studio", icon: "music", label: "studio", run: () => useStudioUi.getState().open("home") },
       { id: "split", icon: "split", label: "split", run: splitAtPlayhead },
       { id: "canvas", icon: "canvas", label: "canvas", run: open("canvas") },
       { id: "marker", icon: "keyframe", label: "marker", run: addMarker },

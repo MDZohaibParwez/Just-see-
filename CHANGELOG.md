@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.0 — Phase 3: audio studio
+
+### Added
+
+- Audio effects on any clip (35+): Studio voice in one tap, noise reduction (Rust/wasm spectral), de-hum, de-click, de-ess, de-reverb, breath removal, compressor, limiter, gate, EQ, pitch, voice filters (telephone, walkie-talkie, muffled, radio, megaphone, robot, chipmunk, deep), reverb, echo, cave echo, chorus, flanger, phaser, 8D pan, lo-fi, bitcrusher.
+- LUFS and true-peak measurement; the limiter now detects true peak (4× oversampled).
+- Free stem split (vocals, drums, bass, other) and vocal removal.
+- 75 built-in sound effects, synthesised in code (free to use), with search; "My sounds" for your own files.
+- Auto duck: lowers music under speech.
+- Audio studio: step sequencer, piano roll with scale and chords, synths (subtractive, FM, 808, sampler), 3 drum kits, mixer with sends and sidechain, audio regions with trim/gain/fades/pitch, mic recording, Web MIDI, WAV export, send to video.
+- Background-music mood templates: Upbeat, Cinematic, Lo-fi, Suspense, Theme/intro, Stinger.
+
+### Changed
+
+- Project gains `audioSessions` and clips gain `audioFx` (both default to empty, schema stays version 1).
+
 ## 0.2.0 — Phase 2: full video editor
 
 ### Added

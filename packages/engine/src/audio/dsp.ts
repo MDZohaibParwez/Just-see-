@@ -189,6 +189,28 @@ export function compress(ch: Channels, sampleRate: number, o: CompressorOpts): C
 }
 
 /** Look-ahead brick-wall limiter at `ceilingDb` (true-peak safe with margin). */
+/** 4x oversampling taps (windowed sinc, 8 taps) for phases 1/4, 2/4, 3/4. */
+const TP_TAPS: Float32Array[] = [0.25, 0.5, 0.75].map((f) => {
+  const t = new Float32Array(8);
+  for (let k = 0; k < 8; k++) {
+    const x = k - 3 - f;
+    const w = 0.5 + 0.5 * Math.cos((Math.PI * x) / 4.5);
+    t[k] = (x === 0 ? 1 : Math.sin(Math.PI * x) / (Math.PI * x)) * w;
+  }
+  return t;
+});
+
+/** Largest reconstructed value between sample i and i+1 (true-peak estimate). */
+function interSamplePeak(x: Float32Array, i: number): number {
+  let m = 0;
+  for (const taps of TP_TAPS) {
+    let v = 0;
+    for (let k = 0; k < 8; k++) v += (x[i - 3 + k] ?? 0) * taps[k]!;
+    if (Math.abs(v) > m) m = Math.abs(v);
+  }
+  return m;
+}
+
 export function limit(ch: Channels, sampleRate: number, ceilingDb = -1, releaseMs = 80): Channels {
   const ceiling = Math.pow(10, (ceilingDb - 0.3) / 20);
   const len = ch[0]?.length ?? 0;
@@ -198,7 +220,7 @@ export function limit(ch: Channels, sampleRate: number, ceilingDb = -1, releaseM
   const need = new Float32Array(len);
   for (let i = 0; i < len; i++) {
     let p = 0;
-    for (const x of ch) p = Math.max(p, Math.abs(x[i]!));
+    for (const x of ch) p = Math.max(p, Math.abs(x[i]!), interSamplePeak(x, i));
     need[i] = p > ceiling ? ceiling / p : 1;
   }
   const out = ch.map(() => new Float32Array(len));

@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Icon } from "@just-see/ui";
 import { AUDIO_FX, AUDIO_FX_BY_TYPE, SFX, defaultAudioParams, type AudioFxCategory } from "@just-see/engine";
 import { createId, findClip, isMediaClip } from "@just-see/schema";
-import { addSfx } from "@/lib/audio-tools";
+import { addAssetAtPlayhead, addOwnSfx, addSfx } from "@/lib/audio-tools";
 import { isProcessing } from "@/lib/clip-audio";
 import { useEditor, useProject } from "@/lib/editor-store";
 import { useT, type MessageKey } from "@/lib/i18n";
@@ -120,7 +120,10 @@ let previewCtx: AudioContext | null = null;
 
 export function SfxPanel() {
   const t = useT();
-  const [cat, setCat] = useState<(typeof SFX)[number]["category"]>("transition");
+  const [cat, setCat] = useState<(typeof SFX)[number]["category"] | "mine">("transition");
+  const [q, setQ] = useState("");
+  const assets = useEditor((s) => s.history?.project.assets);
+  const mine = useMemo(() => (assets ?? []).filter((a) => a.kind === "audio" && a.name.startsWith("[SFX] ")), [assets]);
   const play = (id: string) => {
     const def = SFX.find((s) => s.id === id);
     if (!def) return;
@@ -137,14 +140,60 @@ export function SfxPanel() {
   return (
     <Sheet title={t("soundEffects")}>
       <div className="no-scrollbar my-2 flex gap-2 overflow-x-auto">
-        {(["transition", "impact", "ui", "comedy", "ambience"] as const).map((k) => (
-          <Chip key={k} active={cat === k} onClick={() => setCat(k)} testId={`sfxcat-${k}`}>
+        {(["transition", "impact", "ui", "foley", "ambience", "meme"] as const).map((k) => (
+          <Chip key={k} active={cat === k && !q} onClick={() => { setCat(k); setQ(""); }} testId={`sfxcat-${k}`}>
             {t(`sfx_${k}` as MessageKey)}
           </Chip>
         ))}
+        <Chip active={cat === "mine" && !q} onClick={() => { setCat("mine"); setQ(""); }} testId="sfxcat-mine">
+          {t("sfxMine")}
+        </Chip>
       </div>
+      <input
+        type="search"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder={t("sfxSearch")}
+        data-testid="sfx-search"
+        className="mb-2 h-10 w-full rounded-xl border border-line bg-surface-2 px-3 text-sm"
+      />
+      {cat === "mine" && !q && (
+        <div className="flex flex-col gap-1">
+          <label className="flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl bg-accent text-sm text-accent-contrast">
+            <Icon name="plus" size={16} />
+            {t("sfxImport")}
+            <input
+              type="file"
+              accept="audio/*"
+              multiple
+              hidden
+              data-testid="sfx-import"
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? []);
+                e.target.value = "";
+                void (async () => {
+                  for (const f of files) await addOwnSfx(f);
+                })();
+              }}
+            />
+          </label>
+          {mine.map((a) => (
+            <div key={a.id} className="flex items-center gap-2 rounded-xl border border-line bg-surface-2 px-2 py-1">
+              <span className="flex-1 truncate text-sm">{a.name.slice(6)}</span>
+              <button type="button" className="flex h-9 items-center gap-1 rounded-full bg-accent px-3 text-sm text-accent-contrast" onClick={() => addAssetAtPlayhead(a.id)}>
+                <Icon name="plus" size={16} />
+                {t("add")}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <ul className="flex flex-col gap-1">
-        {SFX.filter((s) => s.category === cat).map((s) => (
+        {SFX.filter((s) => {
+          if (!q) return s.category === cat;
+          const needle = q.toLowerCase();
+          return s.label.toLowerCase().includes(needle) || s.id.includes(needle) || (s.tags ?? []).some((x) => x.includes(needle));
+        }).map((s) => (
           <li key={s.id} className="flex items-center gap-2 rounded-xl border border-line bg-surface-2 px-2 py-1">
             <button type="button" className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-3" aria-label={`${t("play")} ${s.label}`} onClick={() => play(s.id)}>
               <Icon name="play" size={16} />

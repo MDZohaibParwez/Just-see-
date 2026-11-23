@@ -91,3 +91,40 @@ describe("studio render (Phase 3 done-when, part 2)", () => {
     expect(w.channels[0]![1]).toBeCloseTo(0.5, 3);
   });
 });
+
+describe("mood templates and SFX library", () => {
+  it("every mood builds a valid session that renders sound", async () => {
+    const { MOODS, moodSession } = await import("./audio/moods");
+    const { AudioSessionSchema } = await import("@just-see/schema");
+    const { renderStudio } = await import("./audio/studio");
+    const { loadDsp } = await import("./audio/wasm");
+    const dsp = await loadDsp();
+    let n = 0;
+    const id = (p: string) => `${p}${(n++).toString(36)}`;
+    for (const m of MOODS) {
+      const s = AudioSessionSchema.parse(moodSession(m.id, id, { bars: m.id === "stinger" ? 2 : 4 }));
+      const r = await renderStudio(s, new Map(), dsp, 22050);
+      let peak = 0;
+      for (const v of r.channels[0]) peak = Math.max(peak, Math.abs(v));
+      expect(peak, m.id).toBeGreaterThan(0.05);
+      expect(peak, m.id).toBeLessThanOrEqual(1.01);
+    }
+  }, 60000);
+
+  it("every sound effect is finite, non-silent and unique", async () => {
+    const { SFX } = await import("./audio/sfx");
+    expect(new Set(SFX.map((s) => s.id)).size).toBe(SFX.length);
+    expect(SFX.length).toBeGreaterThanOrEqual(60);
+    for (const s of SFX) {
+      const ch = s.make(22050);
+      expect(ch.length, s.id).toBe(2);
+      let peak = 0;
+      for (const v of ch[0]!) {
+        expect(Number.isFinite(v), s.id).toBe(true);
+        peak = Math.max(peak, Math.abs(v));
+      }
+      expect(peak, s.id).toBeGreaterThan(s.id === "room-tone" ? 0.001 : 0.05);
+      expect(peak, s.id).toBeLessThanOrEqual(1);
+    }
+  }, 60000);
+});

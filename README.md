@@ -225,13 +225,13 @@ Phases are built strictly in order. A phase is done only when its check passes.
 | --- | --- | --- | --- |
 | 1 | **Foundation + video MVP**: monorepo, schema, commands, engine, import, timeline (cut, trim, split, speed), text, 20 transitions, 30 effects, MP4 export, autosave, PWA | A 60 s 9:16 reel with 5 clips, text and music exports correctly from a phone browser | ✅ Done |
 | 2 | **Full video editor**: all of Module 1, incl. auto captions, background removal, beat sync | Every video feature passes E2E tests and a 4K export matches the preview frame-for-frame | ✅ Done ([status](docs/phase2-status.md)) |
-| 3 | **Audio studio**: Edit mode, then Produce mode | A noisy phone voice recording becomes a clean -14 LUFS export in one tap, and a 16-bar beat can be built | ⏳ Next |
-| 4 | **Motion studio**: layers, keyframes, graph editor, shapes, text animators, effects, Lottie | An animated lower-third and a logo reveal can be built and dropped into a video | ⬜ |
+| 3 | **Audio studio**: Edit mode, then Produce mode | A noisy phone voice recording becomes a clean -14 LUFS export in one tap, and a 16-bar beat can be built | ✅ Done ([status](docs/phase3-status.md)) |
+| 4 | **Motion studio**: layers, keyframes, graph editor, shapes, text animators, effects, Lottie | An animated lower-third and a logo reveal can be built and dropped into a video | ⏳ Next |
 | 5 | **Assets, templates, accounts, cloud sync** | One search covers fonts, music and SFX, and every asset carries license data | ⬜ |
 | 6 | **Claude connector + server render** | Claude, using only the connector, turns 3 clips into a captioned 30 s reel and returns a download link | ⬜ |
 | 7 | **Polish**: performance, accessibility, onboarding, analytics, crash reporting | All performance budgets met | ⬜ |
 
-> 💰 Phases 2 and 6 need a paid GPU server (captions, background removal, stems, server render). Budget gets decided before those phases start.
+> 💰 Phases 2 and 3 were built to run free in the browser (captions, background removal and stems run on the device). Only Phase 6 (server render) may need a paid server; budget gets decided before it starts.
 
 ---
 

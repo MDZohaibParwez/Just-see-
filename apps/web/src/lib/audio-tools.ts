@@ -30,6 +30,10 @@ import { translate, useLocale } from "./i18n";
 const tr = (k: Parameters<typeof translate>[1]) => translate(useLocale.getState().locale, k);
 const pcmCache = new Map<string, Promise<Pcm>>();
 
+export function invalidatePcm(assetId: string): void {
+  pcmCache.delete(assetId);
+}
+
 /** Whole-file PCM for an asset (cached for the session). */
 export function assetPcm(asset: Asset): Promise<Pcm> {
   let job = pcmCache.get(asset.id);
@@ -176,6 +180,32 @@ export async function addSfx(id: string): Promise<void> {
   const { importFile } = await import("./media");
   const asset = await importFile(file);
   asset.license = { kind: "library", name: "Just See built-in sound (synthesised)", commercialUse: true, attribution: "" };
+  const s = useEditor.getState();
+  const { createMediaClip } = await import("@just-see/schema");
+  const clip = createMediaClip(asset);
+  clip.startUs = s.playheadUs;
+  s.dispatch({
+    type: "batch",
+    payload: { label: "Sound effect", commands: [{ type: "asset/add", payload: { asset } }, { type: "clip/add", payload: { clip, trackType: "audio", newTrackId: createId("t_") } }] },
+  });
+}
+
+/** Put an existing audio asset on a new audio track at the playhead. */
+export async function addAssetAtPlayhead(assetId: string): Promise<void> {
+  const s = useEditor.getState();
+  const asset = s.history?.project.assets.find((a) => a.id === assetId);
+  if (!asset) return;
+  const { createMediaClip } = await import("@just-see/schema");
+  const clip = createMediaClip(asset);
+  clip.startUs = s.playheadUs;
+  s.dispatch({ type: "clip/add", payload: { clip, trackType: "audio", newTrackId: createId("t_") } });
+}
+
+/** Import the user's own sound file into "My sounds" and place it at the playhead. */
+export async function addOwnSfx(file: File): Promise<void> {
+  const { importFile } = await import("./media");
+  const asset = await importFile(file);
+  asset.name = `[SFX] ${asset.name}`.slice(0, 500);
   const s = useEditor.getState();
   const { createMediaClip } = await import("@just-see/schema");
   const clip = createMediaClip(asset);

@@ -136,6 +136,13 @@ Known Phase 1 limits:
 - **Analysis**: beat detection, silence detection, colour statistics and reframe planning are pure functions with unit tests.
 - **New commands**: `clip/setKeyframe`, `clip/removeKeyframe`, `clip/clearKeyframes`, `clip/setSpeedCurve`, `clip/freeze`, `clip/slip`, `clip/roll`, `clip/slide`, `clip/group`, `clip/ungroup`, `clip/deleteMany`, `timeline/rippleDelete`, `marker/add`, `marker/remove`, `marker/setBeats`.
 
+## Phase 3 additions (audio)
+
+- **DSP**: `packages/dsp` is Rust compiled to `wasm32` with a C ABI (FFT, STFT, spectral denoise, HPSS, time-stretch, pitch shift). `build.mjs` embeds the wasm as base64 in `engine/src/audio/dsp-wasm.ts`; `loadDsp()` instantiates it. Filters, dynamics, loudness and creative effects are TypeScript in `engine/src/audio/dsp.ts`.
+- **Clip audio effects**: `MediaClip.audioFx` is a chain from the `AUDIO_FX` registry. Preview plays a processed, cached WAV of the clip; export runs the same chain in `mixAudio`, so both match.
+- **Studio sessions**: `project.audioSessions` (`schema/src/session.ts`) hold tracks, patterns, instruments, regions and mixer settings. `renderStudio` renders a session offline (drums, synths, regions → track fx → pan/volume automation → sidechain → reverb bus → master soft clip and true-peak limiter). "Send to video" bounces a WAV asset and places or updates an audio clip. Every change is one `session/put` command, so undo works across the studio and the editor.
+- **Sounds and moods**: `audio/sfx.ts` synthesises sound effects; `audio/moods.ts` builds editable sessions for background music moods.
+
 ## Web app
 
 - Next.js App Router, **static export** (`output: "export"`). Everything runs on the device; no server is needed in Phase 1.

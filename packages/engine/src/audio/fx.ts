@@ -71,6 +71,9 @@ export const AUDIO_FX: readonly AudioFxDef[] = [
   { type: "robot", label: "Robot voice", category: "voice", params: [p("freq", "Tone Hz", 20, 200, 60, 1)], run: (ch, sr, q) => ch.map((x) => x.map((v, i) => v * Math.sin((2 * Math.PI * (q.freq ?? 60) * i) / sr) * 1.6)) },
   { type: "telephone", label: "Telephone", category: "voice", params: [], run: (ch, sr) => D.telephone(ch, sr) },
   { type: "megaphone", label: "Megaphone", category: "voice", params: [], run: (ch, sr) => D.saturate(D.filter(D.filter(ch, sr, "highpass", 600, 1.2), sr, "peaking", 1800, 1, 8), 0.7) },
+  { type: "muffled", label: "Muffled (next room)", category: "voice", params: [p("cutoff", "Cut-off Hz", 200, 2000, 500, 10)], run: (ch, sr, q) => D.reverb(D.filter(D.filter(ch, sr, "lowpass", q.cutoff ?? 500, 0.8), sr, "lowpass", q.cutoff ?? 500, 0.8), sr, 0.3, 0.7, 0.15) },
+  { type: "walkie-talkie", label: "Walkie-talkie", category: "voice", params: [], run: (ch, sr) => D.saturate(D.bitcrush(D.filter(D.filter(ch, sr, "highpass", 900, 1), sr, "lowpass", 2600, 1), 8, 1), 0.8) },
+  { type: "cave-echo", label: "Cave echo", category: "space", params: [p("mix", "Mix", 0, 1, 0.4)], run: (ch, sr, q) => D.reverb(D.delay(ch, sr, 450, 0.5, q.mix ?? 0.4), sr, 0.85, 0.5, 0.3) },
   { type: "radio", label: "Old radio", category: "voice", params: [], run: (ch, sr) => D.bitcrush(D.telephone(ch, sr), 10, 2) },
   // Space
   { type: "reverb", label: "Reverb", category: "space", params: [p("size", "Room size", 0, 1, 0.5), p("damping", "Damping", 0, 1, 0.4), p("mix", "Mix", 0, 1, 0.25)], run: (ch, sr, q) => D.reverb(ch, sr, q.size, q.damping, q.mix) },

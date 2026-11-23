@@ -26,3 +26,4 @@ export * from "./audio/wav";
 export * from "./audio/sfx";
 export * from "./audio/duck";
 export * from "./audio/studio";
+export * from "./audio/moods";

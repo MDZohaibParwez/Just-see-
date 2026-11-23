@@ -208,3 +208,14 @@ export function getPeaks(asset: Asset): Promise<Float32Array | null> {
   }
   return job;
 }
+
+/** Forget cached data for an asset whose file was replaced (e.g. a re-bounced studio mix). */
+export function invalidateAsset(assetId: string): void {
+  blobs.delete(assetId);
+  const u = urls.get(assetId);
+  if (u) URL.revokeObjectURL(u);
+  urls.delete(assetId);
+  thumbCache.delete(assetId);
+  thumbJobs.delete(assetId);
+  peakCache.delete(assetId);
+}
