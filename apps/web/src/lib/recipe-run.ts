@@ -192,6 +192,14 @@ export async function buildRecipe(recipe: Recipe, onStep: (s: Step) => void = ()
         if (op.duck) await (await import("./audio-tools")).autoDuck(12).catch(() => 0);
         break;
       }
+      case "style": {
+        step(`Style: ${op.style}`);
+        const { applyStyle } = await import("./styles");
+        const hasCaptions = recipe.ops.some((x) => x.op === "captions");
+        const hasMusic = recipe.ops.some((x) => x.op === "music");
+        await applyStyle(op.style, op.fields, { music: op.music && !hasMusic, captions: !hasCaptions });
+        break;
+      }
       case "captions": {
         step("Captions");
         const style = op.style === "karaoke" ? "clean" : op.style === "bold" ? "bold-pop" : "subtle";

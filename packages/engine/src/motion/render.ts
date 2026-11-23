@@ -120,6 +120,18 @@ function drawMotionText(ctx: Ctx2D, l: MotionLayer): void {
       x += widths[k]!;
     });
   });
+  // Fit to the box: scale everything down when the widest line is too wide.
+  if (t.maxWidth) {
+    let widest = 0;
+    for (let li = 0; li < lines.length; li++) {
+      const lu = units.filter((u) => u.line === li);
+      if (lu.length) widest = Math.max(widest, lu[lu.length - 1]!.x + lu[lu.length - 1]!.w - lu[0]!.x);
+    }
+    if (widest > t.maxWidth) {
+      const k = t.maxWidth / widest;
+      ctx.scale(k, k);
+    }
+  }
   const visible = units.filter((u) => u.text.trim().length > 0);
   const order = anim?.random ? randomOrder(visible.length) : undefined;
   const drawUnit = (u: Unit) => {

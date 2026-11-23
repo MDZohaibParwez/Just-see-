@@ -216,3 +216,32 @@ export function SfxPanel() {
     </Sheet>
   );
 }
+
+export function AiVoicePanel() {
+  const t = useT();
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState<number | null>(null);
+  const toast = useEditor((s) => s.toast);
+  const make = async () => {
+    setBusy(0);
+    try {
+      const { addVoiceover } = await import("@/lib/ai-tools");
+      await addVoiceover(text, (p) => setBusy(p));
+      toast(t("addedToVideo"));
+      setText("");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <Sheet title={t("aiVoice")}>
+      <p className="mb-2 text-xs text-muted">{t("aiVoiceHint")}</p>
+      <textarea data-testid="ai-voice-text" value={text} onChange={(e) => setText(e.target.value)} rows={4} maxLength={1500} className="w-full rounded-xl border border-line bg-surface-2 p-3 text-sm" placeholder="Welcome back to my channel! Today we are going to Goa." />
+      <button type="button" data-testid="ai-voice-make" disabled={busy !== null || !text.trim()} className="mt-2 w-full rounded-xl bg-accent py-3 font-semibold text-accent-contrast disabled:opacity-50" onClick={() => void make()}>
+        {busy !== null ? `${t("aiVoiceMaking")} ${Math.round(busy * 100)}%` : t("aiVoiceMake")}
+      </button>
+    </Sheet>
+  );
+}

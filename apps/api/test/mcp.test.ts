@@ -88,6 +88,19 @@ describe("connector (MCP)", () => {
     await c.close();
   }, 60_000);
 
+  it("lists reel styles, explains them and applies one", async () => {
+    const c = await client();
+    const list = textOf(await c.callTool({ name: "list_styles", arguments: {} }));
+    for (const id of ["anime-dialogue", "pov-story", "talking-head", "lyric-card", "scenic-lyric"]) expect(list).toContain(id);
+    expect(textOf(await c.callTool({ name: "get_style_guide", arguments: { style: "pov-story" } }))).toContain("Hook:");
+    const id = /Created video ([a-z0-9]+)/.exec(textOf(await c.callTool({ name: "create_video", arguments: {} })))![1]!;
+    const ok = textOf(await c.callTool({ name: "apply_style", arguments: { video_id: id, style: "lyric-card", fields: { hook: "If she sends you this" } } }));
+    expect(ok).toContain("style");
+    const bad = await c.callTool({ name: "apply_style", arguments: { video_id: id, style: "nope" } });
+    expect((bad as { isError?: boolean }).isError).toBe(true);
+    await c.close();
+  });
+
   it("share links only accept files in our store", async () => {
     const bad = await fetch(`${apiBase}/api/share`, { method: "POST", body: JSON.stringify({ url: "https://evil.test/x" }) });
     expect(bad.status).toBe(400);

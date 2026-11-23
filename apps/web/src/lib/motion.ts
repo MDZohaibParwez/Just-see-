@@ -66,11 +66,11 @@ export async function imageAssetFromFile(file: File): Promise<Asset> {
 }
 
 /** Build a template comp sized like the video and add it to the project. */
-export async function createFromTemplate(templateId: string, logo?: File | null): Promise<MotionComp | null> {
+export async function createFromTemplate(templateId: string, logo?: File | null, extraOpts: Partial<TemplateOptions> = {}): Promise<MotionComp | null> {
   const t = TEMPLATE_BY_ID.get(templateId);
   if (!t) return null;
   const size = sequenceSize();
-  const opts: TemplateOptions = { ...size };
+  const opts: TemplateOptions = { ...size, ...extraOpts };
   const extra: Command[] = [];
   if (logo) {
     const asset = await imageAssetFromFile(logo);

@@ -12,6 +12,7 @@ import { MOODS } from "../../../packages/engine/src/audio/moods";
 import { TEMPLATES } from "../../../packages/engine/src/motion/templates";
 import { TRANSITIONS } from "../../../packages/engine/src/transitions/catalog";
 import { EFFECTS } from "../../../packages/engine/src/effects/catalog";
+import { REEL_STYLES, REEL_STYLE_BY_ID, styleGuide } from "../../../packages/engine/src/styles/reel-styles";
 import { probe } from "./probe";
 import type { Store } from "./store";
 
@@ -128,7 +129,7 @@ export function buildMcpServer(ctx: Ctx): McpServer {
     { name: "just-see", version: "0.6.0" },
     {
       instructions:
-        "Just See edits videos. Typical flow: create_video → add_media (public links) or give the user get_upload_link to add phone clips → list_media to see lengths → add_clip for each clip in order (with trims) → add_captions / add_text / add_music / add_sound_effect / add_motion_template → fit_duration if needed → render_video. Give the user the render link: opening it renders the video in their browser and saves it; then get_render returns the MP4 download link. Use list_options to see sound effects, moods, transitions, effects and templates.",
+        "Just See edits videos. For popular Reels formats (anime dialogue, POV story with notification, aesthetic detail, hook + lyric montage, quote reveal, talking head + captions + CTA, scenic lyric montage, dream card, minimal lyric card) call list_styles / get_style_guide and apply_style after adding clips. Typical flow: create_video → add_media (public links) or give the user get_upload_link to add phone clips → list_media to see lengths → add_clip for each clip in order (with trims) → add_captions / add_text / add_music / add_sound_effect / add_motion_template → fit_duration if needed → render_video. Give the user the render link: opening it renders the video in their browser and saves it; then get_render returns the MP4 download link. Use list_options to see sound effects, moods, transitions, effects and templates.",
     },
   );
 
@@ -299,6 +300,29 @@ export function buildMcpServer(ctx: Ctx): McpServer {
       ].join("\n"),
     );
   });
+
+  server.registerTool("list_styles", { title: "Reel styles", description: "Ready-made Reels formats with their look, structure and fields.", inputSchema: {} }, async () =>
+    text(REEL_STYLES.map((s) => `${s.id}: ${s.label} — ${s.format}. Fields: ${s.fields.map((f) => f.key).join(", ")}`).join("\n")),
+  );
+
+  server.registerTool(
+    "get_style_guide",
+    { title: "How a reel style works", description: "The hook, structure, shooting tips, text, sound, colour and pacing of a reel style. Use it to plan clips, trims and text before apply_style.", inputSchema: { style: z.string() } },
+    async ({ style }) => {
+      const s = REEL_STYLE_BY_ID.get(style);
+      return s ? text(styleGuide(s)) : fail(`Unknown style. Styles: ${REEL_STYLES.map((x) => x.id).join(", ")}`);
+    },
+  );
+
+  server.registerTool(
+    "apply_style",
+    {
+      title: "Apply a reel style",
+      description: "Give the video a ready-made Reels look: colour grade, transitions, slow motion or Ken Burns, overlays (header, notification, dialogue, lyric card, end card), and music/captions when the style uses them. Add clips first. fields fills the style's text (see list_styles).",
+      inputSchema: { video_id: z.string(), style: z.string(), fields: z.record(z.string(), z.string()).default({}), music: z.boolean().default(true) },
+    },
+    async (a) => (REEL_STYLE_BY_ID.has(a.style) ? addOp(ctx, a.video_id, { op: "style", style: a.style, fields: a.fields, music: a.music }) : fail(`Unknown style. Styles: ${REEL_STYLES.map((x) => x.id).join(", ")}`)),
+  );
 
   server.registerTool(
     "render_video",

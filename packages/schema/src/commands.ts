@@ -180,7 +180,15 @@ export const CommandPayloads = {
   "font/add": z.object({ font: ProjectFontSchema }),
   "asset/update": z.object({
     assetId: IdSchema,
-    patch: z.object({ storageKey: z.string().max(500).optional(), durationUs: MicrosSchema.optional(), sizeBytes: z.number().int().nonnegative().optional(), name: z.string().max(500).optional() }),
+    patch: z.object({
+      storageKey: z.string().max(500).optional(),
+      durationUs: MicrosSchema.optional(),
+      sizeBytes: z.number().int().nonnegative().optional(),
+      name: z.string().max(500).optional(),
+      width: z.number().int().nonnegative().optional(),
+      height: z.number().int().nonnegative().optional(),
+      mimeType: z.string().max(200).optional(),
+    }),
   }),
   "internal/restore": z.object({
     fonts: z.array(ProjectFontSchema).optional(),

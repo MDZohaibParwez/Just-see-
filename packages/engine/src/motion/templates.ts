@@ -435,6 +435,247 @@ export const TEMPLATES: readonly TemplateDef[] = [
       return comp(id, "Callout", "callout", o, [label, arrow, circle], [{ layerId: label.id, field: "text", label: "Label" }, { layerId: circle.id, field: "color", label: "Colour" }], dur);
     },
   },
+  {
+    id: "hook-header",
+    label: "Hook header (top banner)",
+    category: "social",
+    build: (id, o) => {
+      const dur = o.duration ?? 10;
+      const u = Math.min(o.width, o.height) / 1080;
+      const top = o.height * 0.08;
+      const compact = o.subtitle !== undefined && o.subtitle.trim() === "";
+      const bannerH = (compact ? 150 : 230) * u;
+      const maxW = o.width * 0.82;
+      const banner = layer(id, {
+        name: "Banner",
+        type: "shape",
+        transform: { x: o.width / 2, y: top + bannerH / 2 },
+        shape: { kind: "rect", width: o.width * 0.9, height: bannerH, roundness: 28 * u, fill: o.accent ?? "#ffffff" },
+        keyframes: { opacity: [kf(0, 0), kf(0.25, 1)], scaleY: [kf(0, 0.6, "bezier", BACK), kf(0.35, 1)] },
+      });
+      const head = layer(id, {
+        name: "Header",
+        type: "text",
+        transform: { x: o.width / 2, y: top + bannerH * (compact ? 0.5 : 0.4) },
+        text: { text: o.title ?? "If he sends you this 💓", fontSize: 64 * u, fontWeight: 800, color: "#111111", maxWidth: maxW },
+        keyframes: { opacity: [kf(0.1, 0), kf(0.35, 1)] },
+      });
+      const sub = layer(id, {
+        name: "Subline",
+        type: "text",
+        hidden: compact,
+        transform: { x: o.width / 2, y: top + bannerH * 0.75 },
+        text: { text: compact ? " " : o.subtitle ?? "(You won)", fontSize: 40 * u, fontWeight: 500, color: "#444444", maxWidth: maxW },
+        keyframes: { opacity: [kf(0.25, 0), kf(0.5, 1)] },
+      });
+      return comp(id, "Hook header", "hook-header", o, [head, sub, banner], [
+        { layerId: head.id, field: "text", label: "Header" },
+        { layerId: sub.id, field: "text", label: "Subline" },
+        { layerId: banner.id, field: "fill", label: "Banner colour" },
+      ], dur);
+    },
+  },
+  {
+    id: "end-card",
+    label: "End card (@handle)",
+    category: "social",
+    build: (id, o) => {
+      const dur = o.duration ?? 2;
+      const u = Math.min(o.width, o.height) / 1080;
+      const bg = layer(id, { name: "Fade", type: "solid", width: o.width, height: o.height, color: "#000000", transform: { x: o.width / 2, y: o.height / 2 }, keyframes: { opacity: [kf(0, 0, "ease-out"), kf(0.6, 0.85)] } });
+      const handle = layer(id, {
+        name: "Handle",
+        type: "text",
+        transform: { x: o.width / 2, y: o.height * 0.52 },
+        text: { text: o.title ?? "@yourhandle", fontSize: 66 * u, fontWeight: 800, color: "#ffffff", letterSpacing: 2 * u, maxWidth: o.width * 0.86 },
+        keyframes: { opacity: [kf(0.3, 0), kf(0.7, 1)], y: [kf(0.3, o.height * 0.55, "bezier", QUART_OUT), kf(0.8, o.height * 0.52)] },
+      });
+      const follow = layer(id, {
+        name: "Follow",
+        type: "text",
+        transform: { x: o.width / 2, y: o.height * 0.58 },
+        text: { text: o.subtitle ?? "Follow for more", fontSize: 36 * u, fontWeight: 500, color: "#d0d0d0" },
+        keyframes: { opacity: [kf(0.6, 0), kf(1.0, 1)] },
+      });
+      return comp(id, "End card", "end-card", o, [follow, handle, bg], [
+        { layerId: handle.id, field: "text", label: "Handle" },
+        { layerId: follow.id, field: "text", label: "Line" },
+      ], dur);
+    },
+  },
+  {
+    id: "notification",
+    label: "Message notification",
+    category: "social",
+    build: (id, o) => {
+      const dur = o.duration ?? 3;
+      const u = Math.min(o.width, o.height) / 1080;
+      const w = o.width * 0.9;
+      const h = 170 * u;
+      const y0 = o.height * 0.24 + h / 2;
+      const out = dur - 0.4;
+      const card = layer(id, {
+        name: "Card",
+        type: "shape",
+        transform: { x: o.width / 2, y: y0 },
+        shape: { kind: "rect", width: w, height: h, roundness: 36 * u, fill: o.accent ?? "rgba(245,245,247,0.96)" },
+        effects: [{ id: id("fx_"), type: "shadow", enabled: true, params: { amount: 30, opacity: 0.35, dy: 10 } }],
+        keyframes: { y: [kf(0, -h, "bezier", QUART_OUT), kf(0.45, y0), kf(out, y0, "ease-in"), kf(dur, -h)] },
+      });
+      const icon = layer(id, { name: "Icon", type: "shape", parentId: card.id, transform: { x: -w / 2 + 75 * u, y: 0 }, shape: { kind: "rect", width: 86 * u, height: 86 * u, roundness: 22 * u, fill: "#34c759", fill2: "#30d158" } });
+      const bubble = layer(id, { name: "Bubble", type: "shape", parentId: card.id, transform: { x: -w / 2 + 75 * u, y: 0 }, shape: { kind: "ellipse", width: 50 * u, height: 40 * u, fill: "#ffffff" } });
+      const name = layer(id, {
+        name: "Name",
+        type: "text",
+        parentId: card.id,
+        transform: { x: -w / 2 + 145 * u, y: -28 * u },
+        text: { text: o.title ?? "Babe ❤️", fontSize: 40 * u, fontWeight: 700, color: "#111111", align: "left", maxWidth: w - 260 * u },
+      });
+      const msg = layer(id, {
+        name: "Message",
+        type: "text",
+        parentId: card.id,
+        transform: { x: -w / 2 + 145 * u, y: 28 * u },
+        text: { text: o.subtitle ?? "how am I looking? 😘", fontSize: 36 * u, fontWeight: 400, color: "#333333", align: "left", maxWidth: w - 190 * u },
+      });
+      const when = layer(id, { name: "Time", type: "text", parentId: card.id, transform: { x: w / 2 - 40 * u, y: -28 * u }, text: { text: "now", fontSize: 30 * u, fontWeight: 400, color: "#8a8a8e", align: "right" } });
+      return comp(id, "Notification", "notification", o, [when, msg, name, bubble, icon, card], [
+        { layerId: name.id, field: "text", label: "Name" },
+        { layerId: msg.id, field: "text", label: "Message" },
+      ], dur);
+    },
+  },
+  {
+    id: "lyric-card",
+    label: "Lyric card (motion graphics)",
+    category: "title",
+    build: (id, o) => {
+      const dur = o.duration ?? 10;
+      const u = Math.min(o.width, o.height) / 1080;
+      const cx = o.width / 2;
+      const cy = o.height * 0.58;
+      const size = Math.min(o.width * 0.9, o.height * 0.6);
+      const third = dur / 3;
+      const bg = layer(id, {
+        name: "Background",
+        type: "shape",
+        transform: { x: cx, y: cy },
+        shape: { kind: "rect", width: size, height: size, fill: "#0b0b0b" },
+      });
+      const cream = layer(id, {
+        name: "Cream",
+        type: "shape",
+        transform: { x: cx, y: cy, anchorY: size / 2 },
+        shape: { kind: "rect", width: size, height: size, fill: "#efe6d2" },
+        keyframes: { scaleY: [kf(third - 0.4, 0, "bezier", QUART_OUT), kf(third, 1)] },
+      });
+      cream.transform.y = cy + size / 2;
+      const circle = layer(id, {
+        name: "Circle",
+        type: "shape",
+        transform: { x: cx, y: cy },
+        inUs: Math.round(2 * third * S),
+        shape: { kind: "ellipse", width: size * 0.7, height: size * 0.7, fill: o.accent ?? "#1f4d3a" },
+        keyframes: { scaleX: [kf(2 * third, 0, "bezier", BACK), kf(2 * third + 0.5, 1)], scaleY: [kf(2 * third, 0, "bezier", BACK), kf(2 * third + 0.5, 1)] },
+      });
+      const star = layer(id, {
+        name: "Star",
+        type: "shape",
+        transform: { x: cx, y: cy - size * 0.18 },
+        shape: { kind: "star", width: 90 * u, height: 90 * u, points: 4, innerRatio: 0.25, fill: "#ffffff" },
+        keyframes: { rotation: [kf(0, 0, "linear"), kf(dur, 180)], "shape.width": [kf(0, 0, "bezier", BACK), kf(0.5, 90 * u)], "shape.height": [kf(0, 0, "bezier", BACK), kf(0.5, 90 * u)] },
+      });
+      const lineAt = (i: number, txt: string, colour: string) =>
+        layer(id, {
+          name: `Line ${i + 1}`,
+          type: "text",
+          transform: { x: cx, y: cy + size * 0.08 },
+          inUs: Math.round(i * third * S),
+          outUs: Math.round((i + 1) * third * S),
+          text: { text: txt, fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 78 * u, fontWeight: 400, italic: true, color: colour, maxWidth: size * 0.85, animator: anim({ by: "word", offsetY: 30 * u, smoothness: 1, progress: 0 }) },
+          keyframes: { "anim.progress": [kf(i * third + 0.2, 0), kf(i * third + 1.2, 1, "linear")] },
+        });
+      const l1 = lineAt(0, o.title ?? "Tu woh jo…", "#ffffff");
+      const l2 = lineAt(1, o.subtitle ?? "Kaise ye bayaan?", "#1f4d3a");
+      const l3 = lineAt(2, "Tu na ja…", "#efe6d2");
+      return comp(id, "Lyric card", "lyric-card", o, [l3, l2, l1, star, circle, cream, bg], [
+        { layerId: l1.id, field: "text", label: "Line 1" },
+        { layerId: l2.id, field: "text", label: "Line 2" },
+        { layerId: l3.id, field: "text", label: "Line 3" },
+        { layerId: circle.id, field: "fill", label: "Accent colour" },
+      ], dur);
+    },
+  },
+  {
+    id: "dialogue",
+    label: "Dialogue lines",
+    category: "title",
+    build: (id, o) => {
+      const dur = o.duration ?? 6;
+      const u = Math.min(o.width, o.height) / 1080;
+      const each = dur / 4;
+      const defaults = [o.title ?? "Kya dekh rahi ho?", o.subtitle ?? "Aapke baal bahut acche hain", "Chhu sakti hoon?", "Zaroor!"];
+      const lines = defaults.map((txt, i) =>
+        layer(id, {
+          name: `Line ${i + 1}`,
+          type: "text",
+          transform: { x: o.width / 2, y: o.height * (i % 2 === 0 ? 0.22 : 0.76) },
+          inUs: Math.round(i * each * S),
+          outUs: Math.round((i + 1) * each * S),
+          text: { text: txt, fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 64 * u, fontWeight: 700, color: "#ffffff", stroke: "#000000", strokeWidth: 6 * u, maxWidth: o.width * 0.88, animator: anim({ by: "char", offsetY: 0, blur: 10, smoothness: 6, progress: 0 }) },
+          keyframes: { "anim.progress": [kf(i * each, 0), kf(i * each + Math.min(0.6, each * 0.5), 1, "linear")] },
+          effects: [{ id: id("fx_"), type: "shadow", enabled: true, params: { amount: 14, opacity: 0.6, dy: 4 } }],
+        }),
+      );
+      return comp(id, "Dialogue", "dialogue", o, [...lines].reverse(), lines.map((l, i) => ({ layerId: l.id, field: "text" as const, label: `Line ${i + 1}` })), dur);
+    },
+  },
+  {
+    id: "quote-card",
+    label: "Quote card (black intro)",
+    category: "title",
+    build: (id, o) => {
+      const dur = o.duration ?? 2;
+      const u = Math.min(o.width, o.height) / 1080;
+      const bg = layer(id, { name: "Black", type: "solid", width: o.width, height: o.height, color: "#000000", transform: { x: o.width / 2, y: o.height / 2 }, keyframes: { opacity: [kf(dur - 0.35, 1), kf(dur, 0)] } });
+      const q = layer(id, {
+        name: "Quote",
+        type: "text",
+        transform: { x: o.width / 2, y: o.height / 2 },
+        text: { text: o.title ?? "“Relax, it was just a dream”", fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 60 * u, fontWeight: 400, italic: true, color: "#ffffff", maxWidth: o.width * 0.86 },
+        keyframes: { opacity: [kf(0, 0), kf(0.4, 1), kf(dur - 0.4, 1), kf(dur - 0.1, 0)] },
+      });
+      return comp(id, "Quote card", "quote-card", o, [q, bg], [{ layerId: q.id, field: "text", label: "Quote" }], dur);
+    },
+  },
+  {
+    id: "label-pop",
+    label: "Label pop (key point)",
+    category: "callout",
+    build: (id, o) => {
+      const dur = o.duration ?? 2.5;
+      const u = Math.min(o.width, o.height) / 1080;
+      const y = o.height * 0.3;
+      const pill = layer(id, {
+        name: "Pill",
+        type: "shape",
+        transform: { x: o.width / 2, y },
+        shape: { kind: "rect", width: 640 * u, height: 120 * u, roundness: 60 * u, fill: o.accent ?? "#ffd60a" },
+        keyframes: { scaleX: [kf(0, 0, "bezier", BACK), kf(0.35, 1), kf(dur - 0.25, 1, "ease-in"), kf(dur, 0)], scaleY: [kf(0, 0, "bezier", BACK), kf(0.35, 1), kf(dur - 0.25, 1, "ease-in"), kf(dur, 0)] },
+      });
+      const label = layer(id, {
+        name: "Label",
+        type: "text",
+        parentId: pill.id,
+        transform: { x: 0, y: 0 },
+        text: { text: o.title ?? "Pattern Interrupt", fontSize: 60 * u, fontWeight: 900, color: "#111111", maxWidth: 580 * u },
+      });
+      return comp(id, "Label", "label-pop", o, [label, pill], [
+        { layerId: label.id, field: "text", label: "Label" },
+        { layerId: pill.id, field: "fill", label: "Colour" },
+      ], dur);
+    },
+  },
 ];
 
 export const TEMPLATE_BY_ID: ReadonlyMap<string, TemplateDef> = new Map(TEMPLATES.map((t) => [t.id, t]));

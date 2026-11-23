@@ -7,7 +7,7 @@ import { useEditor } from "@/lib/editor-store";
 import { useT } from "@/lib/i18n";
 import { ExportPanel } from "./ExportPanel";
 import { CaptionsPanel } from "./CaptionsPanel";
-import { AudioFxPanel, SfxPanel } from "./AudioPanels";
+import { AiVoicePanel, AudioFxPanel, SfxPanel } from "./AudioPanels";
 import { StudioScreen, useStudioUi } from "./StudioScreen";
 import { MotionScreen, useMotionUi } from "./MotionScreen";
 import { LibraryScreen, useLibraryUi } from "./LibraryScreen";
@@ -70,6 +70,8 @@ function ActivePanel() {
       return <AudioFxPanel />;
     case "sfx":
       return <SfxPanel />;
+    case "aiVoice":
+      return <AiVoicePanel />;
     case "canvas":
       return <CanvasPanel />;
     case "export":

@@ -115,6 +115,8 @@ export const MotionTextSchema = z.object({
   lineHeight: z.number().min(0.5).max(4).default(1.2),
   /** Uppercase on render. */
   caps: z.boolean().default(false),
+  /** Shrink the text to fit this width (px); null = no limit. */
+  maxWidth: z.number().min(1).max(100000).nullable().default(null),
   animator: TextAnimatorSchema.nullable().default(null),
 });
 export type MotionText = z.infer<typeof MotionTextSchema>;

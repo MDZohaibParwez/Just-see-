@@ -33,3 +33,5 @@ export * from "./motion/templates";
 export * from "./motion/lottie";
 export * from "./library/fonts";
 export * from "./library/search";
+export * from "./analysis/stabilize";
+export * from "./styles/reel-styles";

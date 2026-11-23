@@ -74,6 +74,8 @@ export const RecipeOpSchema = z.discriminatedUnion("op", [
   }),
   /** Trim clips evenly so the video lasts exactly this long. */
   z.object({ op: z.literal("fit"), seconds: z.number().min(1).max(3600) }),
+  /** A reel style: look, transitions, overlays, music and captions in one go. */
+  z.object({ op: z.literal("style"), style: z.string().min(1).max(60), fields: z.record(z.string().max(60), z.string().max(500)).default({}), music: z.boolean().default(true) }),
 ]);
 export type RecipeOp = z.infer<typeof RecipeOpSchema>;
 

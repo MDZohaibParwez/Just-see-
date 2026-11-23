@@ -29,3 +29,5 @@ D=12.1
 [ -f gap.mp3 ] || $F -f lavfi -i "aevalsrc='0.5*sin(2*PI*300*t)*(lt(t,2)+gte(t,4))':s=44100:d=6" -c:a libmp3lame -b:a 128k gap.mp3
 # Noisy phone voice: buzzy "speech" bursts + hiss + 50 Hz hum, quiet level.
 [ -f noisy-voice.mp4 ] || $F -f lavfi -i "color=c=0x334455:size=720x1280:rate=30" -f lavfi -i "aevalsrc='0.08*(sin(2*PI*150*t)+0.5*sin(2*PI*300*t)+0.3*sin(2*PI*450*t)+0.2*sin(2*PI*900*t))*gt(sin(2*PI*0.6*t),0)+0.02*sin(2*PI*50*t)':s=48000:d=8" -f lavfi -i "anoisesrc=color=white:amplitude=0.02:d=8:r=48000" -filter_complex "[1:a][2:a]amix=inputs=2:normalize=0[a]" -map 0:v -map "[a]" -t 8 -c:v libx264 -preset veryfast -pix_fmt yuv420p -c:a aac -b:a 128k noisy-voice.mp4
+# Shaky handheld-style clip (moving crop of clip1) for the stabiliser.
+[ -f shaky.mp4 ] || $F -i clip1.mp4 -vf "crop=w=iw-48:h=ih-48:x='24+18*sin(t*11)+6*sin(t*29)':y='24+16*cos(t*13)+5*sin(t*31)',scale=480:-2" -t 6 -an -c:v libx264 -pix_fmt yuv420p shaky.mp4

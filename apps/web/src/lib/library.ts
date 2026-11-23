@@ -1,6 +1,6 @@
 "use client";
 
-import { FONT_CATALOG, MOODS, SFX, TEMPLATES, moodSession, searchItems, type Mood } from "@just-see/engine";
+import { FONT_CATALOG, MOODS, REEL_STYLES, SFX, TEMPLATES, moodSession, searchItems, type Mood } from "@just-see/engine";
 import { createId, createMediaClip, findClip, isTextClip, type Asset, type MotionComp } from "@just-see/schema";
 import { useEditor } from "./editor-store";
 import { addSfx } from "./audio-tools";
@@ -10,7 +10,7 @@ import { addComp, addCompToVideo, createFromTemplate } from "./motion";
 import { downloadOnline, type OnlineItem } from "./openverse";
 import { importFile } from "./media";
 
-export type LibKind = "font" | "music" | "sound" | "template" | "mine";
+export type LibKind = "style" | "font" | "music" | "sound" | "template" | "mine";
 
 export interface LibItem {
   id: string;
@@ -49,6 +49,7 @@ export async function deleteMyTemplate(id: string): Promise<void> {
 /** Everything that is built in or saved on this device, as one searchable list. */
 export function localItems(mine: MyTemplate[] = []): LibItem[] {
   const items: LibItem[] = [];
+  for (const s of REEL_STYLES) items.push({ id: `style:${s.id}`, kind: "style", label: s.label, hint: s.format, tags: ["style", "reel", "edit", "look", ...s.format.toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 3)], licenseName: "Built-in" });
   for (const f of FONT_CATALOG) items.push({ id: `font:${f.family}`, kind: "font", label: f.family, hint: f.category, tags: [...f.tags, f.category, "font", "text"], licenseName: "OFL 1.1" });
   for (const m of MOODS) items.push({ id: `music:${m.id}`, kind: "music", label: m.label, hint: m.hint, tags: ["music", "bgm", "background", "gaana", m.id, ...m.hint.split(/[ ,]+/)], licenseName: "Built-in" });
   for (const s of SFX) items.push({ id: `sound:${s.id}`, kind: "sound", label: s.label, hint: `${s.category} · ${s.seconds}s`, tags: [...(s.tags ?? []), s.category, "sfx", "sound", "effect", "awaaz"], licenseName: "Built-in" });

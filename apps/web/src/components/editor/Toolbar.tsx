@@ -93,6 +93,9 @@ export function Toolbar({ onImport, onImportMusic }: { onImport: () => void; onI
       tools.push({ id: "crop", icon: "crop", label: "crop", run: open("crop") });
     }
     if (c.kind === "video" && !c.holdFrame) tools.push({ id: "freeze", icon: "freeze", label: "freeze", run: freezeFrame });
+    if (c.kind === "video") tools.push({ id: "stabilize", icon: "crop", label: "stabilize", run: () => void runAi("stabilize", c.id) });
+    if (c.kind === "image") tools.push({ id: "upscale", icon: "fullscreen", label: "aiUpscale", run: () => void runAi("upscale", c.id) });
+    if (c.kind !== "audio") tools.push({ id: "enhance", icon: "sun", label: "hdEnhance", run: () => void runAi("enhance", c.id) });
     if (c.kind === "audio") tools.push({ id: "beats", icon: "keyframe", label: "beats", run: () => void markBeats(c.id) });
     if (c.kind !== "image" && !c.holdFrame) tools.push({ id: "silence", icon: "mute", label: "removeSilence", run: () => void removeSilence(c.id) });
     if (loc.track.type === "main" && loc.index > 0) {
@@ -121,6 +124,7 @@ export function Toolbar({ onImport, onImportMusic }: { onImport: () => void; onI
       { id: "music", icon: "music", label: "music", run: onImportMusic },
       { id: "sfx", icon: "volume", label: "soundEffects", run: open("sfx") },
       { id: "auto-duck", icon: "fade", label: "autoDuck", run: () => void autoDuck() },
+      { id: "ai-voice", icon: "music", label: "aiVoice", run: open("aiVoice") },
       { id: "studio", icon: "music", label: "studio", run: () => useStudioUi.getState().open("home") },
       { id: "motion", icon: "animation", label: "motion", run: () => useMotionUi.getState().open("home") },
       { id: "split", icon: "split", label: "split", run: splitAtPlayhead },
@@ -168,4 +172,29 @@ export function Toolbar({ onImport, onImportMusic }: { onImport: () => void; onI
       ))}
     </nav>
   );
+}
+
+/** Run a device-side AI/heavy tool with progress toasts. */
+async function runAi(kind: "stabilize" | "upscale" | "enhance", clipId: string): Promise<void> {
+  const s = useEditor.getState();
+  const { translate, useLocale } = await import("@/lib/i18n");
+  const tr = (k: Parameters<typeof translate>[1]) => translate(useLocale.getState().locale, k);
+  const m = await import("@/lib/ai-tools");
+  try {
+    if (kind === "enhance") {
+      m.enhanceClip(clipId);
+      s.toast(tr("hdEnhanceDone"));
+      return;
+    }
+    s.toast(tr(kind === "stabilize" ? "stabilizing" : "upscaling"));
+    if (kind === "stabilize") {
+      const shake = await m.stabilizeClip(clipId);
+      s.toast(`${tr("stabilized")} (${shake.toFixed(1)}%)`);
+    } else {
+      const r = await m.upscaleImageClip(clipId);
+      s.toast(`${tr("upscaled")} ${r.width}×${r.height}`);
+    }
+  } catch (e) {
+    s.toast(e instanceof Error ? e.message : String(e), "error");
+  }
 }

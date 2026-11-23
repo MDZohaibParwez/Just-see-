@@ -33,6 +33,7 @@ export type Panel =
   | "captions"
   | "audioFx"
   | "sfx"
+  | "aiVoice"
   | "canvas"
   | "export"
   | "history"
