@@ -154,6 +154,9 @@ export const CommandPayloads = {
     enabled: z.boolean().optional(),
   }),
   "clip/removeEffect": z.object({ clipId: IdSchema, effectId: IdSchema }),
+  "clip/addAudioFx": z.object({ clipId: IdSchema, effect: EffectInstanceSchema }),
+  "clip/updateAudioFx": z.object({ clipId: IdSchema, effectId: IdSchema, params: z.record(z.string(), z.number()).optional(), enabled: z.boolean().optional() }),
+  "clip/removeAudioFx": z.object({ clipId: IdSchema, effectId: IdSchema }),
   "clip/duplicate": z.object({ clipId: IdSchema, newClipId: IdSchema, newTrackId: IdSchema.optional() }),
   /** Remove a time range from every track and close the gap (transcript edits, filler removal). */
   "timeline/rippleDelete": z.object({
@@ -585,6 +588,28 @@ const handlers: { [K in keyof typeof CommandPayloads]: Handler<K> } = {
     clip.effects = clip.effects.filter((e) => e.id !== p.effectId);
   },
 
+  "clip/addAudioFx": (d, p) => {
+    const { clip } = requireClip(d, p.clipId);
+    if (!isMediaClip(clip) || clip.kind === "image") fail("Only clips with sound take audio effects");
+    if (clip.audioFx.some((e) => e.id === p.effect.id)) fail(`Effect id already exists: ${p.effect.id}`);
+    if (clip.audioFx.length >= 16) fail("Too many audio effects on one clip");
+    clip.audioFx = [...clip.audioFx, { ...p.effect, params: { ...p.effect.params } }];
+  },
+
+  "clip/updateAudioFx": (d, p) => {
+    const { clip } = requireClip(d, p.clipId);
+    if (!isMediaClip(clip)) fail("Not a media clip");
+    const fx = clip.audioFx.find((e) => e.id === p.effectId) ?? fail(`Effect not found: ${p.effectId}`);
+    if (p.params) fx.params = { ...fx.params, ...p.params };
+    if (p.enabled !== undefined) fx.enabled = p.enabled;
+  },
+
+  "clip/removeAudioFx": (d, p) => {
+    const { clip } = requireClip(d, p.clipId);
+    if (!isMediaClip(clip) || !clip.audioFx.some((e) => e.id === p.effectId)) fail(`Effect not found: ${p.effectId}`);
+    clip.audioFx = clip.audioFx.filter((e) => e.id !== p.effectId);
+  },
+
   "clip/duplicate": (d, p) => {
     const loc = requireClip(d, p.clipId);
     if (findClip(d, p.newClipId)) fail(`Clip id already exists: ${p.newClipId}`);
@@ -936,6 +961,9 @@ export function describeCommand(command: Command): string {
     "clip/addEffect": "Add effect",
     "clip/updateEffect": "Edit effect",
     "clip/removeEffect": "Remove effect",
+    "clip/addAudioFx": "Add audio effect",
+    "clip/updateAudioFx": "Edit audio effect",
+    "clip/removeAudioFx": "Remove audio effect",
     "clip/duplicate": "Duplicate",
     "clip/setSpeedCurve": "Speed ramp",
     "clip/slip": "Slip",

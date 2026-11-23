@@ -180,3 +180,27 @@ export function removeVocals(ch: Channels, sr: number, dsp: DspModule): Channels
     return out;
   });
 }
+
+/** Stable key for caching processed clip audio. */
+export function audioChainKey(chain: readonly { type: string; enabled: boolean; params: Record<string, number> }[]): string {
+  return JSON.stringify(chain.filter((e) => e.enabled).map((e) => [e.type, e.params]));
+}
+
+/**
+ * Process the source range a clip plays. Preview and export both call this
+ * with the same range, so they hear the same result.
+ */
+export async function processClipPcm(
+  pcm: { sampleRate: number; channels: Float32Array[]; startUs: number },
+  sourceInUs: number,
+  spanUs: number,
+  chain: readonly { type: string; enabled: boolean; params: Record<string, number> }[],
+  dsp: DspModule,
+): Promise<{ sampleRate: number; channels: Float32Array[]; startUs: number }> {
+  const sr = pcm.sampleRate;
+  const a = Math.max(0, Math.round(((sourceInUs - pcm.startUs) / 1e6) * sr));
+  const b = Math.min(pcm.channels[0]?.length ?? 0, a + Math.round((spanUs / 1e6) * sr));
+  const slice = pcm.channels.map((c) => c.slice(a, b));
+  const out = await runAudioChain(slice, sr, chain, dsp);
+  return { sampleRate: sr, channels: out, startUs: pcm.startUs + Math.round((a / sr) * 1e6) };
+}

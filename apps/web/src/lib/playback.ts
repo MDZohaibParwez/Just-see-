@@ -29,6 +29,7 @@ import {
 import { assetBlob, assetUrl } from "./media";
 import { getLutSync, setLutLoadedListener } from "./luts";
 import { onSegmenterReady, personMask, segmenterSync } from "./segment";
+import { processedAudioUrl, setProcessedListener } from "./clip-audio";
 
 interface VideoSlot {
   el: HTMLVideoElement;
@@ -86,6 +87,7 @@ export class PreviewPlayer {
     this.loop = this.loop.bind(this);
     setLutLoadedListener(() => (this.dirty = true));
     this.unsubSeg = onSegmenterReady(() => (this.dirty = true));
+    setProcessedListener(() => (this.dirty = true));
     this.raf = requestAnimationFrame(this.loop);
   }
 
@@ -357,17 +359,23 @@ export class PreviewPlayer {
         const muted = track.muted || clip.muted || (clip.kind === "video" && !asset.hasAudio);
         const seg = this.segments.find((s) => s.clipId === clip.id);
         const gain = active && seg && !muted ? Math.min(1, segmentGainAt(seg, t)) : 0;
+        // Clips with audio effects play pre-processed audio (same as export).
+        const fxUrl = clip.audioFx?.some((e) => e.enabled) ? processedAudioUrl(clip, asset) : null;
         if (clip.kind === "video") {
           wantedVideo.add(clip.id);
           const slot = this.videoSlot(clip, asset, now);
-          this.drive(slot.el, srcTime, clip, rate, active && playing, gain, active || !playing, () => {
+          this.drive(slot.el, srcTime, clip, rate, active && playing, fxUrl ? 0 : gain, active || !playing, () => {
             slot.version++;
             this.dirty = true;
           });
-        } else {
-          wantedAudio.add(clip.id);
-          const slot = this.audioSlot(clip, asset, now);
-          this.drive(slot.el, srcTime, clip, rate, active && playing, gain, active, () => {});
+        }
+        if (clip.kind === "audio" || fxUrl) {
+          const key = fxUrl ? `fx:${clip.id}` : clip.id;
+          wantedAudio.add(key);
+          const slot = this.audioSlot(key, fxUrl ? Promise.resolve(fxUrl) : assetUrl(asset), now);
+          // Processed audio starts at the clip's in-point.
+          const t0 = fxUrl ? (srcTime * 1e6 - clip.sourceInUs) / 1e6 : srcTime;
+          this.drive(slot.el, t0, clip, rate, active && playing, gain, active, () => {});
         }
       }
     }
@@ -457,16 +465,16 @@ export class PreviewPlayer {
     return slot;
   }
 
-  private audioSlot(clip: MediaClip, asset: Asset, now: number): AudioSlot {
-    let slot = this.audio.get(clip.id);
+  private audioSlot(key: string, url: Promise<string>, now: number): AudioSlot {
+    let slot = this.audio.get(key);
     if (!slot) {
       const el = document.createElement("audio");
       el.preload = "auto";
-      void assetUrl(asset).then((url) => {
-        if (!this.destroyed) el.src = url;
+      void url.then((u) => {
+        if (!this.destroyed) el.src = u;
       });
-      slot = { el, clipId: clip.id, lastUsed: now };
-      this.audio.set(clip.id, slot);
+      slot = { el, clipId: key, lastUsed: now };
+      this.audio.set(key, slot);
     }
     slot.lastUsed = now;
     return slot;

@@ -5,6 +5,8 @@ import { decodeMp4Audio, decodeWithWebAudio, mixSegments, type Pcm } from "../me
 import { Mp4Demuxer, isMp4Like } from "../media/demux";
 import { VideoFrameReader } from "../media/frame-reader";
 import { parseCubeLut, type Lut3D } from "../media/lut";
+import { processClipPcm } from "../audio/fx";
+import { loadDsp } from "../audio/wasm";
 
 /** Computes a person mask for a decoded frame (background removal). */
 export type MaskProvider = (image: TexImageSource) => Promise<ResolvedImage | null>;
@@ -162,6 +164,10 @@ export class RenderSession {
           }
         }
         data = whole.get(asset.id) ?? null;
+      }
+      if (data && seg.audioFx?.length) {
+        const dsp = await loadDsp();
+        data = await processClipPcm(data, seg.sourceInUs, seg.sourceSpanUs ?? seg.durationUs * seg.speed, seg.audioFx, dsp);
       }
       if (data) pcm.set(seg.clipId, data);
       onProgress?.((i + 1) / Math.max(1, segments.length));

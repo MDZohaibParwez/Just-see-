@@ -22,3 +22,6 @@ export * from "./analysis/reframe";
 export * from "./audio/dsp";
 export * from "./audio/wasm";
 export * from "./audio/fx";
+export * from "./audio/wav";
+export * from "./audio/sfx";
+export * from "./audio/duck";

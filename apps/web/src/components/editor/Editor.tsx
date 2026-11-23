@@ -7,6 +7,7 @@ import { useEditor } from "@/lib/editor-store";
 import { useT } from "@/lib/i18n";
 import { ExportPanel } from "./ExportPanel";
 import { CaptionsPanel } from "./CaptionsPanel";
+import { AudioFxPanel, SfxPanel } from "./AudioPanels";
 import {
   AdjustPanel,
   AnimationPanel,
@@ -61,6 +62,10 @@ function ActivePanel() {
       return <CropPanel />;
     case "captions":
       return <CaptionsPanel />;
+    case "audioFx":
+      return <AudioFxPanel />;
+    case "sfx":
+      return <SfxPanel />;
     case "canvas":
       return <CanvasPanel />;
     case "export":

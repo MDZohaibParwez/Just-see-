@@ -31,6 +31,8 @@ export type Panel =
   | "adjust"
   | "crop"
   | "captions"
+  | "audioFx"
+  | "sfx"
   | "canvas"
   | "export"
   | "history"

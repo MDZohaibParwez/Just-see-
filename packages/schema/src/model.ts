@@ -182,6 +182,9 @@ export const MediaClipSchema = z.object({
   /** Freeze frame: show the frame at sourceInUs for the whole clip. */
   holdFrame: z.boolean().default(false),
   speedCurve: SpeedCurveSchema.nullable().default(null),
+  // ---- Added in Phase 3 ----
+  /** Offline audio effect chain (Studio voice, EQ, reverb, voice changers …). */
+  audioFx: z.array(EffectInstanceSchema).max(16).default([]),
 });
 export type MediaClip = z.infer<typeof MediaClipSchema>;
 

@@ -120,6 +120,7 @@ export function createMediaClip(asset: Asset, opts: { id?: string; startUs?: num
     reverse: false,
     holdFrame: false,
     speedCurve: null,
+    audioFx: [],
   };
 }
 

@@ -163,3 +163,75 @@ export function addMarker(): void {
 }
 
 export { clipEndUs };
+
+
+/** Generate a built-in sound effect and put it on an audio track at the playhead. */
+export async function addSfx(id: string): Promise<void> {
+  const { SFX_BY_ID, encodeWav } = await import("@just-see/engine");
+  const def = SFX_BY_ID.get(id);
+  if (!def) return;
+  const sr = 48000;
+  const wav = encodeWav(def.make(sr), sr);
+  const file = new File([wav], `${def.label}.wav`, { type: "audio/wav" });
+  const { importFile } = await import("./media");
+  const asset = await importFile(file);
+  asset.license = { kind: "library", name: "Just See built-in sound (synthesised)", commercialUse: true, attribution: "" };
+  const s = useEditor.getState();
+  const { createMediaClip } = await import("@just-see/schema");
+  const clip = createMediaClip(asset);
+  clip.startUs = s.playheadUs;
+  s.dispatch({
+    type: "batch",
+    payload: { label: "Sound effect", commands: [{ type: "asset/add", payload: { asset } }, { type: "clip/add", payload: { clip, trackType: "audio", newTrackId: createId("t_") } }] },
+  });
+}
+
+/** Lower music under speech: volume keyframes on every audio-track clip. */
+export async function autoDuck(depthDb = 12): Promise<number> {
+  const s = useEditor.getState();
+  const p = s.history?.project;
+  if (!p) return 0;
+  const { detectSilence, duckKeyframes, toMono } = await import("@just-see/engine");
+  const seq = getSequence(p);
+  s.toast(tr("analyzing"));
+  // Voice = sound from video clips (main and overlays).
+  const voice: { startUs: number; endUs: number }[] = [];
+  for (const t of seq.tracks) {
+    if (t.type === "audio" || t.muted) continue;
+    for (const c of t.clips) {
+      if (!isMediaClip(c) || c.kind !== "video" || c.muted) continue;
+      const asset = getAsset(p, c.assetId);
+      if (!asset?.hasAudio) continue;
+      const pcm = await assetPcm(asset);
+      const mono = toMono(pcm.channels);
+      const quiet = detectSilence(mono, pcm.sampleRate, { thresholdDb: -38, minDurationUs: 400_000, paddingUs: 50_000 });
+      // Speech = clip span minus quiet parts, mapped to timeline time.
+      const toTl = (srcUs: number) => c.startUs + (srcUs + pcm.startUs - c.sourceInUs) / c.speed;
+      let cursor = c.sourceInUs - pcm.startUs;
+      const end = cursor + c.durationUs * c.speed;
+      for (const q of quiet) {
+        if (q.endUs <= cursor || q.startUs >= end) continue;
+        if (q.startUs > cursor) voice.push({ startUs: toTl(cursor), endUs: toTl(Math.min(q.startUs, end)) });
+        cursor = Math.max(cursor, q.endUs);
+      }
+      if (cursor < end) voice.push({ startUs: toTl(cursor), endUs: toTl(end) });
+    }
+  }
+  const commands: Command[] = [];
+  for (const t of seq.tracks) {
+    if (t.type !== "audio") continue;
+    for (const c of t.clips) {
+      if (!isMediaClip(c)) continue;
+      const kfs = duckKeyframes(c, voice, { depthDb });
+      commands.push({ type: "clip/clearKeyframes", payload: { clipId: c.id, prop: "volume" } });
+      for (const k of kfs) commands.push({ type: "clip/setKeyframe", payload: { clipId: c.id, prop: "volume", t: Math.min(k.t, c.durationUs), v: k.v, ease: k.ease } });
+    }
+  }
+  if (!commands.length) {
+    s.toast(tr("needMusic"), "error");
+    return 0;
+  }
+  s.dispatch({ type: "batch", payload: { label: "Auto duck", commands } });
+  useEditor.getState().toast(tr("ducked"));
+  return voice.length;
+}

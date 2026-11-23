@@ -354,6 +354,8 @@ export interface AudioSegment {
   reverse?: boolean;
   /** Total source span the segment consumes. */
   sourceSpanUs?: number;
+  /** Enabled offline audio effects for this clip. */
+  audioFx?: EffectInstance[];
   /** Source offset (from sourceInUs) at a clip-local time; handles curves/reverse. */
   sourceOffsetAt?: (localUs: number) => number;
 }
@@ -389,6 +391,7 @@ export function resolveAudio(project: Project, sequenceId?: string): AudioSegmen
         volumeKeyframes: clip.keyframes.volume,
         reverse: clip.reverse,
         sourceSpanUs: sourceSpanUs(clip),
+        audioFx: (clip.audioFx ?? []).filter((e) => e.enabled),
         sourceOffsetAt: clip.speedCurve || clip.reverse ? (u: number) => sourceOffsetAt(clip, u) : undefined,
       });
     });

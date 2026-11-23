@@ -3,7 +3,7 @@
 import { Icon, type IconName } from "@just-see/ui";
 import { createId, findClip, getAsset, getSequence, isMediaClip, type Project } from "@just-see/schema";
 import { addBgRemoval, autoReframe, addText, deleteSelection, duplicateSelection, freezeFrame, splitAtPlayhead } from "@/lib/actions";
-import { addMarker, cutToBeat, markBeats, removeSilence } from "@/lib/audio-tools";
+import { addMarker, autoDuck, cutToBeat, markBeats, removeSilence } from "@/lib/audio-tools";
 import { useEditor, useProject, type Panel } from "@/lib/editor-store";
 import { useT, type MessageKey } from "@/lib/i18n";
 
@@ -72,6 +72,7 @@ export function Toolbar({ onImport, onImportMusic }: { onImport: () => void; onI
     tools = [{ id: "split", icon: "split", label: "split", run: splitAtPlayhead }];
     if (c.kind !== "image" && !c.holdFrame) tools.push({ id: "speed", icon: "speed", label: "speed", run: open("speed") });
     if (c.kind !== "image") tools.push({ id: "volume", icon: "volume", label: "volume", run: open("volume") });
+    if (c.kind !== "image" && !c.holdFrame) tools.push({ id: "audio-fx", icon: "music", label: "audioFx", run: open("audioFx") });
     if (c.kind !== "audio") {
       tools.push({ id: "remove-bg", icon: "eyeOff", label: "removeBg", run: () => void addBgRemoval(c.id) });
       tools.push({ id: "effects", icon: "effects", label: "effects", run: open("effects") });
@@ -104,6 +105,8 @@ export function Toolbar({ onImport, onImportMusic }: { onImport: () => void; onI
       { id: "text", icon: "text", label: "text", run: addText },
       { id: "captions", icon: "style", label: "captions", run: open("captions") },
       { id: "music", icon: "music", label: "music", run: onImportMusic },
+      { id: "sfx", icon: "volume", label: "soundEffects", run: open("sfx") },
+      { id: "auto-duck", icon: "fade", label: "autoDuck", run: () => void autoDuck() },
       { id: "split", icon: "split", label: "split", run: splitAtPlayhead },
       { id: "canvas", icon: "canvas", label: "canvas", run: open("canvas") },
       { id: "marker", icon: "keyframe", label: "marker", run: addMarker },
