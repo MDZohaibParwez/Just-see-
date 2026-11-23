@@ -95,6 +95,15 @@ export function Preview() {
       return;
     }
     playerRef.current = player;
+    (window as unknown as { __justSeePreview?: unknown }).__justSeePreview = {
+      capture: async (us: number, w: number, h: number) => {
+        const blob = await player.capture(us, w, h);
+        const buf = new Uint8Array(await blob.arrayBuffer());
+        let bin = "";
+        for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+        return btoa(bin);
+      },
+    };
     const s = useEditor.getState();
     const p = currentProject(s);
     if (p) player.setProject(p);

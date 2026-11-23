@@ -2,6 +2,9 @@
 
 import {
   Compositor,
+  Mp4Demuxer,
+  VideoFrameReader,
+  isMp4Like,
   planMediaSources,
   resolveAudio,
   resolveFrame,
@@ -76,7 +79,8 @@ export class PreviewPlayer {
   private unsubSeg: () => void = () => undefined;
 
   constructor(canvas: HTMLCanvasElement, cb: { onTime: (us: number) => void; onEnded: () => void }) {
-    this.compositor = new Compositor(canvas);
+    // preserveDrawingBuffer lets capture() read the canvas after rendering.
+    this.compositor = new Compositor(canvas, { preserveDrawingBuffer: true });
     this.onTime = cb.onTime;
     this.onEnded = cb.onEnded;
     this.loop = this.loop.bind(this);
@@ -116,6 +120,7 @@ export class PreviewPlayer {
 
   play(): void {
     if (!this.project) return;
+    window.clearTimeout(this.exactTimer);
     const dur = sequenceDurationUs(getSequence(this.project));
     if (this.timeUs >= dur - 10_000) this.timeUs = 0;
     this.playing = true;
@@ -157,6 +162,8 @@ export class PreviewPlayer {
       this.dirty = false;
       this.sync(this.timeUs, false);
       this.render(this.timeUs);
+      if (this.exactRender) this.exactRender = false;
+      else this.scheduleExact();
     }
   }
 
@@ -178,6 +185,96 @@ export class PreviewPlayer {
   }
 
   private masks = new Map<string, { key: number | string; mask: ResolvedImage }>();
+
+  // ---------- Frame-exact frames while paused ----------
+  // When paused, the frame on screen comes from the same WebCodecs decoder the
+  // export uses, so a paused preview is pixel-identical to the exported frame.
+  private demuxers = new Map<string, Promise<Mp4Demuxer | null>>();
+  private readers = new Map<string, { reader: VideoFrameReader; busy: boolean }>();
+  private exact = new Map<string, { us: number; frame: VideoFrame }>();
+  private exactTimer = 0;
+
+  private demuxerFor(asset: Asset): Promise<Mp4Demuxer | null> {
+    let d = this.demuxers.get(asset.id);
+    if (!d) {
+      d = isMp4Like(asset.mimeType, asset.name)
+        ? assetBlob(asset)
+            .then((b) => Mp4Demuxer.open(b))
+            .then(async (dm) => (dm.video && (await VideoFrameReader.isSupported(dm)) ? dm : null))
+            .catch(() => null)
+        : Promise.resolve(null);
+      this.demuxers.set(asset.id, d);
+    }
+    return d;
+  }
+
+  private clearExact(): void {
+    for (const e of this.exact.values()) e.frame.close();
+    this.exact.clear();
+  }
+
+  /** Decode exact frames for what is on screen (paused only). */
+  private scheduleExact(): void {
+    window.clearTimeout(this.exactTimer);
+    this.exactTimer = window.setTimeout(() => void this.loadExact(), 120);
+  }
+
+  async loadExact(): Promise<boolean> {
+    const project = this.project;
+    if (!project || this.playing) return false;
+    const t = this.timeUs;
+    const plan = resolveFrame(project, t);
+    let changed = false;
+    const visible = new Set(planMediaSources(plan).filter((x) => x.kind === "video").map((x) => x.clipId));
+    for (const [id, r] of this.readers) {
+      if (!visible.has(id) && !r.busy) {
+        r.reader.close();
+        this.readers.delete(id);
+      }
+    }
+    for (const [id, e] of this.exact) {
+      if (!visible.has(id)) {
+        e.frame.close();
+        this.exact.delete(id);
+      }
+    }
+    for (const src of planMediaSources(plan)) {
+      if (src.kind !== "video") continue;
+      const have = this.exact.get(src.clipId);
+      if (have && have.us === src.sourceTimeUs) continue;
+      const asset = getAsset(project, src.assetId);
+      if (!asset) continue;
+      const dm = await this.demuxerFor(asset);
+      if (!dm || this.playing || this.timeUs !== t) return false;
+      let r = this.readers.get(src.clipId);
+      if (!r) {
+        r = { reader: new VideoFrameReader(dm), busy: false };
+        this.readers.set(src.clipId, r);
+      }
+      if (r.busy) continue;
+      r.busy = true;
+      try {
+        const frame = await r.reader.frameAt(src.sourceTimeUs);
+        if (frame && !this.playing && this.timeUs === t) {
+          this.exact.get(src.clipId)?.frame.close();
+          // Copy: the reader may close its frame on the next call.
+          this.exact.set(src.clipId, { us: src.sourceTimeUs, frame: frame.clone() });
+          changed = true;
+        }
+      } catch {
+        // Keep showing the element frame.
+      } finally {
+        r.busy = false;
+      }
+    }
+    if (changed) {
+      this.dirty = true;
+      this.exactRender = true;
+    }
+    return changed;
+  }
+
+  private exactRender = false;
 
   private maskFor(clipId: string): ResolvedImage | null {
     const seg = segmenterSync();
@@ -207,10 +304,20 @@ export class PreviewPlayer {
     return mask;
   }
 
+  private rotationOf(assetId: string): number {
+    return this.project ? (getAsset(this.project, assetId)?.rotation ?? 0) : 0;
+  }
+
   private imageFor(kind: "video" | "image", clipId: string, assetId: string): ResolvedImage | null {
     if (kind === "image") {
       const b = this.images.get(assetId);
       return b && b !== "loading" ? { image: b, rotation: 0, version: assetId } : null;
+    }
+    if (!this.playing) {
+      const ex = this.exact.get(clipId);
+      const layer = this.lastPlan?.layers.flatMap((l) => (l.kind === "transition" ? [l.from, l.to] : [l])).find((l) => l.source.kind === "video" && l.source.clipId === clipId);
+      const want = layer && layer.source.kind === "video" ? layer.source.sourceTimeUs : -1;
+      if (ex && ex.us === want) return { image: ex.frame, rotation: this.rotationOf(assetId), version: `x${ex.us}` };
     }
     const slot = this.video.get(clipId);
     if (!slot || slot.el.readyState < 2) return null;
@@ -389,6 +496,55 @@ export class PreviewPlayer {
       .catch(() => this.images.delete(asset.id));
   }
 
+  /**
+   * Render the preview at an exact time and size and return a PNG. Used to
+   * prove preview and export match pixel for pixel.
+   */
+  async capture(us: number, width: number, height: number): Promise<Blob> {
+    const canvas = this.canvas;
+    const prevW = canvas.width;
+    const prevH = canvas.height;
+    this.pause();
+    this.compositor.resize(width, height);
+    this.seek(us);
+    // Seek every element and wait until all visible frames are ready.
+    const deadline = performance.now() + 15000;
+    for (;;) {
+      this.sync(us, false);
+      const plan = this.project ? resolveFrame(this.project, us) : null;
+      const pending = plan
+        ? planMediaSources(plan).some((src) => {
+            if (src.kind === "image") {
+              const b = this.images.get(src.assetId);
+              return !b || b === "loading";
+            }
+            const slot = this.video.get(src.clipId);
+            return !slot || slot.el.readyState < 2 || slot.el.seeking || Math.abs(slot.el.currentTime - src.sourceTimeUs / 1e6) > 0.02;
+          })
+        : false;
+      if (!pending || performance.now() > deadline) break;
+      await new Promise((r) => setTimeout(r, 30));
+    }
+    this.render(us);
+    // Wait until every visible video shows its exact decoded frame.
+    for (let tries = 0; tries < 100; tries++) {
+      await this.loadExact();
+      const plan = this.project ? resolveFrame(this.project, us) : null;
+      const missing = plan
+        ? planMediaSources(plan).some((src) => src.kind === "video" && this.exact.get(src.clipId)?.us !== src.sourceTimeUs)
+        : false;
+      if (!missing) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    this.render(us);
+    const blob = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("capture failed"))), "image/png"),
+    );
+    this.compositor.resize(prevW, prevH);
+    this.dirty = true;
+    return blob;
+  }
+
   /** Media sources visible right now (for tests / debugging). */
   visibleSources(): number {
     return this.lastPlan ? planMediaSources(this.lastPlan).length : 0;
@@ -396,6 +552,10 @@ export class PreviewPlayer {
 
   destroy(): void {
     this.destroyed = true;
+    window.clearTimeout(this.exactTimer);
+    this.clearExact();
+    for (const r of this.readers.values()) r.reader.close();
+    this.readers.clear();
     this.unsubSeg();
     cancelAnimationFrame(this.raf);
     for (const id of [...this.video.keys()]) this.dropVideo(id);
