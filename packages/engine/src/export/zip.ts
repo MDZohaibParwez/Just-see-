@@ -72,3 +72,40 @@ export class ZipWriter {
     return new Blob(this.parts, { type: "application/zip" });
   }
 }
+
+/** Read a ZIP written with stored (uncompressed) entries, like ZipWriter's. */
+export function readZip(data: Uint8Array): Map<string, Uint8Array> {
+  const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  // End of central directory: search backwards for its signature.
+  let eocd = -1;
+  for (let i = data.length - 22; i >= Math.max(0, data.length - 65557); i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) throw new Error("Not a ZIP file");
+  const count = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  const out = new Map<string, Uint8Array>();
+  const dec = new TextDecoder();
+  for (let k = 0; k < count; k++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) throw new Error("Broken ZIP directory");
+    const method = dv.getUint16(p + 10, true);
+    const size = dv.getUint32(p + 20, true);
+    const nameLen = dv.getUint16(p + 28, true);
+    const extraLen = dv.getUint16(p + 30, true);
+    const commentLen = dv.getUint16(p + 32, true);
+    const local = dv.getUint32(p + 42, true);
+    const name = dec.decode(data.subarray(p + 46, p + 46 + nameLen));
+    if (method !== 0) throw new Error(`Compressed ZIP entries are not supported (${name})`);
+    const lNameLen = dv.getUint16(local + 26, true);
+    const lExtra = dv.getUint16(local + 28, true);
+    const start = local + 30 + lNameLen + lExtra;
+    const body = data.subarray(start, start + size);
+    if (crc32(body) !== dv.getUint32(p + 16, true)) throw new Error(`ZIP entry is damaged (${name})`);
+    out.set(name, body);
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  return out;
+}

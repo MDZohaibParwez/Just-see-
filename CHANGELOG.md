@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0 — Phase 5: library, licences, backups (no server)
+
+### Added
+
+- One library search for fonts (50 free Google Fonts, incl. Hindi and Urdu), background music (mood templates), 75 sound effects, motion templates and your own templates. Works with Hindi/Hinglish words and small typos.
+- Free online sounds and images from Openverse (CC0, public domain, CC BY only).
+- Every asset carries licence data (licence name, link, author, source, credit line). A Licences page lists everything in the project and exports `credits.txt`.
+- Fonts picked in the library apply to the selected text and load before preview and export.
+- Backups: save a project with all its media as one `.justsee` file and open it on any device (replaces accounts and cloud sync, no server needed).
+- "My templates": save a motion composition and reuse it in any project on this device.
+
+### Changed
+
+- Licence schema gains `licenseName`, `licenseUrl`, `author` and `source`; projects gain `fonts` (defaults keep schema version 1).
+
 ## 0.4.0 — Phase 4: motion studio
 
 ### Added

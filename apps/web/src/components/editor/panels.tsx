@@ -511,6 +511,14 @@ export function TextStylePanel() {
             <span style={{ fontFamily: f.family }}>{f.label} अ</span>
           </Chip>
         ))}
+        {(useEditor.getState().history?.project.fonts ?? []).map((f) => (
+          <Chip key={f.family} active={c.style.fontFamily === f.css} onClick={() => go({ fontFamily: f.css })} testId={`font-${f.family}`}>
+            <span style={{ fontFamily: f.css }}>{f.family} अ</span>
+          </Chip>
+        ))}
+        <Chip onClick={() => void import("./LibraryScreen").then((m) => m.useLibraryUi.getState().show("font"))} testId="more-fonts">
+          + {t("moreFonts")}
+        </Chip>
       </div>
       <div className="flex gap-2 py-1">
         <Chip active={c.style.fontWeight >= 700} onClick={() => go({ fontWeight: c.style.fontWeight >= 700 ? 400 : 700 })}>

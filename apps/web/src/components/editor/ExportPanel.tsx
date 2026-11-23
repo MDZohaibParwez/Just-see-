@@ -57,6 +57,7 @@ export function ExportPanel() {
     const started = performance.now();
     try {
       const base = chosen.width * chosen.height >= 3840 * 2160 ? 40e6 : chosen.width * chosen.height >= 1920 * 1080 ? 12e6 : 6e6;
+      await (await import("@/lib/fonts")).ensureProjectFonts(project);
       const res = await exportProject(project, mediaLoader, {
         width: chosen.width,
         height: chosen.height,
@@ -219,6 +220,15 @@ export function ExportPanel() {
             {t("startExport")} · {formatTimecode(duration)}
           </button>
           <p className="text-center text-xs text-muted">{t("noWatermark")}</p>
+          <button
+            type="button"
+            data-testid="backup-save"
+            className="rounded-xl border border-line py-3 text-sm"
+            onClick={() => void import("@/lib/backup").then((m) => m.downloadBackup(project))}
+          >
+            {t("backupSave")}
+          </button>
+          <p className="text-center text-[11px] text-muted">{t("backupHint")}</p>
         </div>
       ) : state.kind === "running" ? (
         <div className="py-4" aria-live="polite">

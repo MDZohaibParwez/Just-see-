@@ -52,7 +52,7 @@ export async function importLut(file: File): Promise<Asset> {
     fps: 0,
     hasAudio: false,
     storageKey,
-    license: { kind: "user-upload", commercialUse: true },
+    license: { kind: "user-upload", commercialUse: true, licenseName: "Your own media", source: "user" },
     createdAt: Date.now(),
   };
 }

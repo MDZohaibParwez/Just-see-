@@ -10,6 +10,7 @@ import { CaptionsPanel } from "./CaptionsPanel";
 import { AudioFxPanel, SfxPanel } from "./AudioPanels";
 import { StudioScreen, useStudioUi } from "./StudioScreen";
 import { MotionScreen, useMotionUi } from "./MotionScreen";
+import { LibraryScreen, useLibraryUi } from "./LibraryScreen";
 import {
   AdjustPanel,
   AnimationPanel,
@@ -113,7 +114,7 @@ export function Editor() {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
-      if (useStudioUi.getState().openId || useMotionUi.getState().openId) return;
+      if (useStudioUi.getState().openId || useMotionUi.getState().openId || useLibraryUi.getState().open) return;
       const s = useEditor.getState();
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key.toLowerCase() === "z") {
@@ -192,6 +193,7 @@ export function Editor() {
       </div>
       <StudioScreen />
       <MotionScreen />
+      <LibraryScreen />
       <p className="sr-only">{t("keyboardHint")}</p>
       <input
         ref={mediaInput}

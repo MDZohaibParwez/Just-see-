@@ -152,6 +152,14 @@ Known Phase 1 limits:
 - **Lottie** (`engine/src/motion/lottie.ts`): export bakes animated values every 2 frames; import reads the same subset back.
 - **Templates** (`engine/src/motion/templates.ts`): functions that build comps sized to the video, with `editable` fields for the quick-edit panel.
 
+## Phase 5 additions (library, no server)
+
+- **Library** (`apps/web/src/lib/library.ts`): built-in fonts, moods, sound effects, motion templates and saved "my templates" become one list of items searched by `searchItems` (`engine/src/library/search.ts`: word, prefix, substring and one-typo matches over labels and tags, including Hindi tags).
+- **Online** (`lib/openverse.ts`): Openverse API from the browser, filtered to CC0, PDM and CC BY; downloads keep the licence on the asset.
+- **Licences**: `License` has `licenseName`, `licenseUrl`, `author`, `source` and `attribution`. Every import path fills them. `lib/credits.ts` builds the Licences page and `credits.txt`.
+- **Fonts**: `project.fonts` lists Google fonts; `ensureProjectFonts` loads them on open and before export. When a font finishes loading the text raster caches are invalidated (`bumpFontEpoch`).
+- **Backups** (`lib/backup.ts`): `.justsee` = stored ZIP with `project.json`, `manifest.json` and `media/<assetId>`. Restoring writes media to OPFS/IndexedDB and saves the project under a new id when needed. This replaces accounts and cloud sync, so there is still no server.
+
 ## Web app
 
 - Next.js App Router, **static export** (`output: "export"`). Everything runs on the device; no server is needed in Phase 1.

@@ -1,6 +1,8 @@
 import { z } from "zod";
 import {
   AssetSchema,
+  ProjectFontSchema,
+  type ProjectFont,
   BackgroundSchema,
   BlendModeSchema,
   CropSchema,
@@ -175,11 +177,13 @@ export const CommandPayloads = {
   "session/delete": z.object({ sessionId: IdSchema }),
   "motion/put": z.object({ comp: MotionCompSchema }),
   "motion/delete": z.object({ compId: IdSchema }),
+  "font/add": z.object({ font: ProjectFontSchema }),
   "asset/update": z.object({
     assetId: IdSchema,
     patch: z.object({ storageKey: z.string().max(500).optional(), durationUs: MicrosSchema.optional(), sizeBytes: z.number().int().nonnegative().optional(), name: z.string().max(500).optional() }),
   }),
   "internal/restore": z.object({
+    fonts: z.array(ProjectFontSchema).optional(),
     motionComps: z.array(MotionCompSchema).optional(),
     audioSessions: z.array(AudioSessionSchema).optional(),
     name: z.string().optional(),
@@ -883,6 +887,16 @@ const handlers: { [K in keyof typeof CommandPayloads]: Handler<K> } = {
     d.motionComps = d.motionComps.filter((x) => x.id !== p.compId);
   },
 
+  "font/add": (d, p) => {
+    const fonts = d.fonts ?? [];
+    const i = fonts.findIndex((f) => f.family === p.font.family);
+    if (i >= 0) {
+      const merged = [...new Set([...fonts[i]!.weights, ...p.font.weights])].sort((a, b) => a - b);
+      fonts[i] = { ...fonts[i]!, weights: merged };
+    } else fonts.push(structuredClone(p.font) as ProjectFont);
+    d.fonts = fonts;
+  },
+
   "asset/update": (d, p) => {
     const a = d.assets.find((x) => x.id === p.assetId) ?? fail(`Asset not found: ${p.assetId}`);
     Object.assign(a, Object.fromEntries(Object.entries(p.patch).filter(([, v]) => v !== undefined)));
@@ -890,6 +904,7 @@ const handlers: { [K in keyof typeof CommandPayloads]: Handler<K> } = {
 
   "internal/restore": (d, p) => {
     if (p.audioSessions !== undefined) d.audioSessions = structuredClone(p.audioSessions) as AudioSession[];
+    if (p.fonts !== undefined) d.fonts = structuredClone(p.fonts) as ProjectFont[];
     if (p.motionComps !== undefined) d.motionComps = structuredClone(p.motionComps) as MotionComp[];
     if (p.name !== undefined) d.name = p.name;
     if (p.activeSequenceId !== undefined) d.activeSequenceId = p.activeSequenceId;
@@ -946,6 +961,7 @@ function buildInverse(before: Project, after: Project): Command {
   if (before.activeSequenceId !== after.activeSequenceId) payload.activeSequenceId = before.activeSequenceId;
   if (JSON.stringify(before.assets) !== JSON.stringify(after.assets)) payload.assets = structuredClone(before.assets);
   if (JSON.stringify(before.audioSessions ?? []) !== JSON.stringify(after.audioSessions ?? [])) payload.audioSessions = structuredClone(before.audioSessions ?? []);
+  if (JSON.stringify(before.fonts ?? []) !== JSON.stringify(after.fonts ?? [])) payload.fonts = structuredClone(before.fonts ?? []);
   if (JSON.stringify(before.motionComps ?? []) !== JSON.stringify(after.motionComps ?? [])) payload.motionComps = structuredClone(before.motionComps ?? []);
   const seqs: Record<string, Sequence | null> = {};
   let changed = false;
@@ -1030,6 +1046,7 @@ export function describeCommand(command: Command): string {
     "session/delete": "Delete session",
     "motion/put": "Motion edit",
     "motion/delete": "Delete composition",
+    "font/add": "Add font",
     "asset/update": "Update media",
     "marker/add": "Add marker",
     "marker/remove": "Remove marker",

@@ -108,6 +108,11 @@ export function Preview() {
     const p = currentProject(s);
     if (p) player.setProject(p);
     player.seek(s.playheadUs);
+    const onFonts = () => {
+      const st = useEditor.getState();
+      if (!st.playing) player.seek(st.playheadUs);
+    };
+    window.addEventListener("justsee:fonts", onFonts);
     const unsub = useEditor.subscribe((st, prev) => {
       const np = currentProject(st);
       const pp = currentProject(prev);
@@ -123,6 +128,7 @@ export function Preview() {
       }
     });
     return () => {
+      window.removeEventListener("justsee:fonts", onFonts);
       unsub();
       player.destroy();
       playerRef.current = null;

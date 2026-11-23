@@ -4,7 +4,7 @@ import { identity, placementMatrix, scaling, uvRotationMatrix, multiply, transla
 import type { FramePlan, MediaSource, MotionSource, TextSource, VisualLayer } from "../resolve";
 import { renderMotion, type Ctx2D } from "../motion/render";
 import type { Lut3D } from "../media/lut";
-import { drawText, textRasterKey, type Canvas2D } from "../text/raster";
+import { currentFontEpoch, drawText, textRasterKey, type Canvas2D } from "../text/raster";
 import { BLEND_FS, BLEND_MODES, FULL_VS, QUAD_FS, QUAD_MASK_FS, QUAD_VS, effectFragment, transitionFragment } from "./shaders";
 
 export type GLCanvas = HTMLCanvasElement | OffscreenCanvas;
@@ -310,7 +310,7 @@ export class Compositor {
         imgVersions.push(r.version);
       } else imgVersions.push("-");
     }
-    const key = `${ver}:${src.tUs}:${cw}x${ch}:${imgVersions.join(",")}`;
+    const key = `${ver}:${src.tUs}:${cw}x${ch}:${imgVersions.join(",")}:${currentFontEpoch()}`;
     if (entry.key !== key) {
       if (entry.canvas.width !== cw) entry.canvas.width = cw;
       if (entry.canvas.height !== ch) entry.canvas.height = ch;

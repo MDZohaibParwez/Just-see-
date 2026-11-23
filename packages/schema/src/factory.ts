@@ -89,6 +89,7 @@ export function createProject(opts: {
     activeSequenceId: sequence.id,
     audioSessions: [],
     motionComps: [],
+    fonts: [],
   };
 }
 

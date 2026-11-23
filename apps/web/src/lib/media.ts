@@ -69,7 +69,7 @@ export async function importFile(file: File): Promise<Asset> {
     mimeType: file.type || "application/octet-stream",
     sizeBytes: file.size,
     storageKey,
-    license: { kind: "user-upload", commercialUse: true },
+    license: { kind: "user-upload", commercialUse: true, licenseName: "Your own media", source: "user" },
     createdAt: Date.now(),
   };
   let asset: Asset;

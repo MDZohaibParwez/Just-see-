@@ -179,7 +179,7 @@ export async function addSfx(id: string): Promise<void> {
   const file = new File([wav], `${def.label}.wav`, { type: "audio/wav" });
   const { importFile } = await import("./media");
   const asset = await importFile(file);
-  asset.license = { kind: "library", name: "Just See built-in sound (synthesised)", commercialUse: true, attribution: "" };
+  asset.license = { kind: "library", name: "Just See built-in sound (synthesised)", commercialUse: true, licenseName: "Built-in (free for any use)", source: "built-in" };
   const s = useEditor.getState();
   const { createMediaClip } = await import("@just-see/schema");
   const clip = createMediaClip(asset);

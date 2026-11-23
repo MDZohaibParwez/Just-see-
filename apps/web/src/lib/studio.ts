@@ -207,7 +207,7 @@ export async function sendToVideo(sessionId: string): Promise<void> {
     return;
   }
   const asset: Asset = await importFile(file);
-  asset.license = { kind: "user-upload", name: "Made in Just See audio studio", commercialUse: true };
+  asset.license = { kind: "user-upload", name: "Made in Just See audio studio", commercialUse: true, licenseName: "Your own (made in Just See)", source: "just-see-studio" };
   const clip = createMediaClip(asset);
   clip.startUs = 0;
   const next = structuredClone(session);

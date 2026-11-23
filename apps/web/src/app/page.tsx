@@ -108,6 +108,30 @@ export default function Home() {
         </div>
       </section>
 
+      <label className="mt-4 flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-line p-3 text-sm text-muted">
+        <Icon name="folder" size={18} />
+        {t("backupOpen")}
+        <input
+          type="file"
+          accept=".justsee,application/zip"
+          hidden
+          data-testid="backup-open"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (!f) return;
+            setBusy(true);
+            void import("@/lib/backup")
+              .then((m) => m.restoreBackup(f))
+              .then((id) => router.push(`/edit/?id=${encodeURIComponent(id)}`))
+              .catch((err: unknown) => {
+                setBusy(false);
+                alert(err instanceof Error ? err.message : String(err));
+              });
+          }}
+        />
+      </label>
+
       <section className="mt-8" aria-labelledby="proj-h">
         <h2 id="proj-h" className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">
           {t("yourProjects")}

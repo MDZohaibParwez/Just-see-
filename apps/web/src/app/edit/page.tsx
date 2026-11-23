@@ -28,6 +28,7 @@ function EditorLoader() {
           return;
         }
         useEditor.getState().load(p);
+        void import("@/lib/fonts").then((m) => m.ensureProjectFonts(p));
         void kvSet("lastProjectId", p.id);
         setStatus("ready");
       })

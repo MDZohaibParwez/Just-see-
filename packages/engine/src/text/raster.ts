@@ -33,8 +33,17 @@ export function activeWord(clip: TextClip, localUs: number): number {
   return -1;
 }
 
+let fontEpoch = 0;
+/** Call when web fonts finish loading so cached text is drawn again. */
+export function bumpFontEpoch(): void {
+  fontEpoch++;
+}
+export function currentFontEpoch(): number {
+  return fontEpoch;
+}
+
 export function textRasterKey(clip: TextClip, anim: TextAnimState, width: number, height: number, localUs = 0): string {
-  return JSON.stringify([clip.text, clip.style, clip.transform, anim.dx, anim.dy, anim.scale, anim.visible, anim.blur, width, height, activeWord(clip, localUs)]);
+  return JSON.stringify([fontEpoch, clip.text, clip.style, clip.transform, anim.dx, anim.dy, anim.scale, anim.visible, anim.blur, width, height, activeWord(clip, localUs)]);
 }
 
 /** Greedy word wrap; words stay whole. */

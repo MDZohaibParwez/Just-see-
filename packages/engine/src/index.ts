@@ -31,3 +31,5 @@ export * from "./motion/eval";
 export * from "./motion/render";
 export * from "./motion/templates";
 export * from "./motion/lottie";
+export * from "./library/fonts";
+export * from "./library/search";

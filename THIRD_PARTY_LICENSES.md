@@ -55,11 +55,20 @@ It is a developer tool and is never bundled.
 Written in this project (no third-party code): the Rust DSP module
 (`packages/dsp`: FFT, STFT, spectral denoise, HPSS, phase vocoder; no
 external crates), all TypeScript audio DSP and effects, GIF encoder (`packages/engine/src/export/gif.ts`),
-ZIP writer, `.cube` LUT parser, beat/silence detection, all effect and transition shaders.
+ZIP writer and reader, library search, `.cube` LUT parser, beat/silence detection, all effect and transition shaders.
 
 ## Assets
 
-No third-party fonts, music, sound effects, LUTs or stickers are shipped yet.
+No third-party fonts, music, sound effects, LUTs or stickers are bundled in the app.
+
+### Loaded at runtime (Phase 5)
+
+| Source | License | How it is used |
+| --- | --- | --- |
+| [Google Fonts](https://fonts.google.com) — the 50 families in `packages/engine/src/library/fonts.ts` | SIL Open Font License 1.1 (each family checked) | CSS and font files are loaded from Google's servers when a user picks a font. The licence is saved in `project.fonts`. |
+| [Openverse](https://openverse.org) search API | Results under CC0, Public Domain Mark or CC BY only (share-alike and non-commercial are filtered out) | Users search and download free sounds and images. Each file is saved with its licence, author, source page and the credit line CC BY needs; the Licences page can copy or download credits. |
+
+Motion templates (`packages/engine/src/motion/templates.ts`) and text presets are original designs made from our own shapes and text.
 
 The built-in sound effects (`packages/engine/src/audio/sfx.ts`), drum kits,
 synth presets and mood music templates (`audio/studio.ts`, `audio/moods.ts`)
@@ -68,4 +77,4 @@ or samples from anyone else, so they can be used in any video, including
 commercial ones. Sounds a user imports are stored with the licence
 `user-upload` and stay in that user's project.
 The icon set (`packages/ui/src/icons.tsx`) and app icon are original work for
-this project. Text uses the device's system fonts.
+this project. Text uses the device's system fonts unless the user picks a Google Font.

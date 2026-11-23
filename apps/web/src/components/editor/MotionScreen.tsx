@@ -303,6 +303,15 @@ function CompEditor({ comp }: { comp: MotionComp }) {
           <Icon name="back" size={18} />
         </button>
         <input className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none" value={comp.name} aria-label={t("studioName")} onChange={(e) => updateComp(comp.id, (c) => void (c.name = e.target.value.slice(0, 200)))} />
+        <button
+          type="button"
+          className="h-9 shrink-0 rounded-full bg-surface-2 px-3 text-xs"
+          data-testid="motion-save-template"
+          aria-label={t("saveMyTemplate")}
+          onClick={() => void import("@/lib/library").then((m) => m.saveMyTemplate(comp)).then(() => toast(t("savedMyTemplate")))}
+        >
+          ★
+        </button>
         <button type="button" className="h-9 shrink-0 rounded-full bg-surface-2 px-3 text-xs" onClick={() => downloadLottie(comp)} data-testid="motion-lottie-export">
           Lottie
         </button>

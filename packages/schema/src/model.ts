@@ -109,12 +109,22 @@ export const SpeedCurveSchema = z.object({
 export type SpeedCurve = z.infer<typeof SpeedCurveSchema>;
 
 export const LicenseSchema = z.object({
-  /** user-upload: the user's own media. Library assets come in Phase 5. */
+  /** user-upload: the user's own media. library: built in or from a free library (Phase 5). */
   kind: z.enum(["user-upload", "library"]),
+  /** Human-readable source, e.g. "Just See built-in sound (synthesised)". */
   name: z.string().max(200).optional(),
+  /** Credit line to show when the licence asks for one (CC BY). */
   attribution: z.string().max(1000).optional(),
+  /** Page the asset came from. */
   sourceUrl: z.string().max(2000).optional(),
   commercialUse: z.boolean(),
+  // ---- Added in Phase 5 ----
+  /** Short licence name: "CC0 1.0", "CC BY 4.0", "OFL 1.1", "Built-in" … */
+  licenseName: z.string().max(100).optional(),
+  licenseUrl: z.string().max(2000).optional(),
+  author: z.string().max(300).optional(),
+  /** Where it came from: "built-in", "openverse:freesound", "google-fonts" … */
+  source: z.string().max(100).optional(),
 });
 export type License = z.infer<typeof LicenseSchema>;
 
@@ -297,6 +307,16 @@ export const SequenceSchema = z.object({
 });
 export type Sequence = Omit<z.infer<typeof SequenceSchema>, "tracks"> & { tracks: Track[] };
 
+export const ProjectFontSchema = z.object({
+  family: z.string().min(1).max(200),
+  /** CSS font-family value to use in text styles. */
+  css: z.string().max(300),
+  source: z.enum(["google", "system"]),
+  weights: z.array(z.number().int().min(100).max(1000)).max(20),
+  license: LicenseSchema,
+});
+export type ProjectFont = z.infer<typeof ProjectFontSchema>;
+
 export const ProjectSchema = z.object({
   schemaVersion: z.literal(SCHEMA_VERSION),
   id: IdSchema,
@@ -310,6 +330,8 @@ export const ProjectSchema = z.object({
   audioSessions: z.array(AudioSessionSchema).max(64).default([]),
   /** Motion studio compositions (Phase 4). */
   motionComps: z.array(MotionCompSchema).max(200).default([]),
+  /** Web fonts this project uses (Phase 5), loaded before preview and export. */
+  fonts: z.array(z.lazy(() => ProjectFontSchema)).max(100).default([]),
 });
 export type Project = Omit<z.infer<typeof ProjectSchema>, "sequences"> & { sequences: Sequence[] };
 
