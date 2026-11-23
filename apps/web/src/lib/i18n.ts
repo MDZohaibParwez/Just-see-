@@ -194,6 +194,20 @@ const en = {
   cutWords: "Cut words",
   editLines: "Edit caption lines",
   removeBg: "Remove background",
+  mode_trim: "Trim",
+  mode_roll: "Roll",
+  mode_slip: "Slip",
+  mode_slide: "Slide",
+  group: "Group",
+  ungroup: "Ungroup",
+  selectMore: "Select more",
+  autoReframe: "Auto reframe",
+  reframing: "Finding the subject…",
+  reframed: "Reframed to follow the subject",
+  ease_linear: "Linear",
+  "ease_ease-in": "Ease in",
+  "ease_ease-out": "Ease out",
+  "ease_ease-in-out": "Smooth",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -391,6 +405,20 @@ const hi: Dict = {
   cutWords: "शब्द काटें",
   editLines: "कैप्शन लाइनें बदलें",
   removeBg: "बैकग्राउंड हटाएँ",
+  mode_trim: "ट्रिम",
+  mode_roll: "रोल",
+  mode_slip: "स्लिप",
+  mode_slide: "स्लाइड",
+  group: "ग्रुप",
+  ungroup: "ग्रुप हटाएँ",
+  selectMore: "और चुनें",
+  autoReframe: "ऑटो रीफ़्रेम",
+  reframing: "सब्जेक्ट ढूँढा जा रहा है…",
+  reframed: "सब्जेक्ट के साथ फ़्रेम सेट हो गया",
+  ease_linear: "सीधा",
+  "ease_ease-in": "धीमी शुरुआत",
+  "ease_ease-out": "धीमा अंत",
+  "ease_ease-in-out": "स्मूद",
 };
 
 export const dictionaries = { en, hi } as const;

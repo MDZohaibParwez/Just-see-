@@ -18,3 +18,4 @@ export * from "./export/session";
 export * from "./export/gif";
 export * from "./export/zip";
 export * from "./captions/captions";
+export * from "./analysis/reframe";

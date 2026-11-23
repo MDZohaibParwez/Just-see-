@@ -310,6 +310,43 @@ const keying: EffectDef[] = [
     glsl: `vec4 effect(vec2 uv){ vec4 c = src(uv); vec2 q = (uv - vec2(p_x, p_y)) / (vec2(p_w, p_h) * 0.5); float d = (length(q) - 1.0) * min(p_w, p_h) * 0.5; float m = 1.0 - smoothstep(-p_feather, p_feather + 0.0001, d); if (p_invert > 0.5) m = 1.0 - m; return c * m; }`,
   },
   {
+    type: "mask-pen",
+    label: "Pen mask",
+    category: "key",
+    params: [
+      p("points", "Points", 3, 6, 5, 1),
+      p("x1", "Point 1 X", 0, 1, 0.3), p("y1", "Point 1 Y", 0, 1, 0.25),
+      p("x2", "Point 2 X", 0, 1, 0.7), p("y2", "Point 2 Y", 0, 1, 0.25),
+      p("x3", "Point 3 X", 0, 1, 0.8), p("y3", "Point 3 Y", 0, 1, 0.6),
+      p("x4", "Point 4 X", 0, 1, 0.5), p("y4", "Point 4 Y", 0, 1, 0.8),
+      p("x5", "Point 5 X", 0, 1, 0.2), p("y5", "Point 5 Y", 0, 1, 0.6),
+      p("x6", "Point 6 X", 0, 1, 0.25), p("y6", "Point 6 Y", 0, 1, 0.4),
+      p("feather", "Feather", 0, 0.2, 0.02),
+      p("invert", "Invert", 0, 1, 0, 1),
+    ],
+    glsl: `float sdPoly(vec2 q, vec2 v[6], int n) {
+        float d = dot(q - v[0], q - v[0]); float s = 1.0;
+        for (int i = 0; i < 6; i++) {
+          if (i >= n) break;
+          int j = i == 0 ? n - 1 : i - 1;
+          vec2 vi = v[i]; vec2 vj = v[j];
+          for (int k = 0; k < 6; k++) { if (k == j) vj = v[k]; }
+          vec2 e = vj - vi; vec2 w = q - vi;
+          vec2 b = w - e * clamp(dot(w, e) / max(dot(e, e), 1e-6), 0.0, 1.0);
+          d = min(d, dot(b, b));
+          bvec3 c = bvec3(q.y >= vi.y, q.y < vj.y, e.x * w.y > e.y * w.x);
+          if (all(c) || all(not(c))) s *= -1.0;
+        }
+        return s * sqrt(d);
+      }
+      vec4 effect(vec2 uv){ vec2 a = vec2(aspect(), 1.0);
+        vec2 v[6] = vec2[6](vec2(p_x1, p_y1) * a, vec2(p_x2, p_y2) * a, vec2(p_x3, p_y3) * a, vec2(p_x4, p_y4) * a, vec2(p_x5, p_y5) * a, vec2(p_x6, p_y6) * a);
+        float d = sdPoly(uv * a, v, int(p_points + 0.5));
+        float m = 1.0 - smoothstep(-p_feather, p_feather + 0.0001, d);
+        if (p_invert > 0.5) m = 1.0 - m;
+        return src(uv) * m; }`,
+  },
+  {
     type: "mask-linear",
     label: "Linear mask",
     category: "key",

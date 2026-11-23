@@ -1,11 +1,17 @@
 "use client";
 
 import { Icon, type IconName } from "@just-see/ui";
-import { findClip, isMediaClip } from "@just-see/schema";
-import { addBgRemoval, addText, deleteSelection, duplicateSelection, freezeFrame, splitAtPlayhead } from "@/lib/actions";
+import { createId, findClip, getAsset, getSequence, isMediaClip, type Project } from "@just-see/schema";
+import { addBgRemoval, autoReframe, addText, deleteSelection, duplicateSelection, freezeFrame, splitAtPlayhead } from "@/lib/actions";
 import { addMarker, cutToBeat, markBeats, removeSilence } from "@/lib/audio-tools";
 import { useEditor, useProject, type Panel } from "@/lib/editor-store";
 import { useT, type MessageKey } from "@/lib/i18n";
+
+function isWideIntoTall(p: Project, assetId: string): boolean {
+  const a = getAsset(p, assetId);
+  const seq = getSequence(p);
+  return !!a && a.width / Math.max(1, a.height) > seq.width / seq.height + 0.05;
+}
 
 interface Tool {
   id: string;
@@ -22,8 +28,29 @@ export function Toolbar({ onImport, onImportMusic }: { onImport: () => void; onI
   const open = (p: Panel) => () => useEditor.getState().openPanel(p);
   const loc = project && selection ? findClip(project, selection.clipId) : undefined;
 
+  const multiMode = useEditor((s) => s.multiMode);
+  const multi = useEditor((s) => s.multi);
   let tools: Tool[];
-  if (selection?.kind === "transition") {
+  if (multiMode) {
+    const st = useEditor.getState;
+    const groupOf = project ? multi.map((id) => findClip(project, id)?.clip.groupId).find((g) => g) : undefined;
+    tools = [
+      { id: "multi-delete", icon: "trash", label: "delete", danger: true, run: () => {
+        if (multi.length) st().dispatch({ type: "clip/deleteMany", payload: { clipIds: multi } });
+        st().setMultiMode(false);
+        st().select(null);
+      } },
+      { id: "group", icon: "duplicate", label: "group", run: () => {
+        if (multi.length >= 2) st().dispatch({ type: "clip/group", payload: { clipIds: multi, groupId: createId("g_") } });
+        st().setMultiMode(false);
+      } },
+    ];
+    if (groupOf) tools.push({ id: "ungroup", icon: "close", label: "ungroup", run: () => {
+      st().dispatch({ type: "clip/ungroup", payload: { groupId: groupOf } });
+      st().setMultiMode(false);
+    } });
+    tools.push({ id: "multi-done", icon: "check", label: "done", run: () => st().setMultiMode(false) });
+  } else if (selection?.kind === "transition") {
     tools = [
       { id: "transition", icon: "transition", label: "transition", run: open("transition") },
       { id: "delete", icon: "trash", label: "remove", run: deleteSelection, danger: true },
@@ -36,6 +63,7 @@ export function Toolbar({ onImport, onImportMusic }: { onImport: () => void; onI
       { id: "effects", icon: "effects", label: "effects", run: open("effects") },
       { id: "adjust", icon: "adjust", label: "adjust", run: open("adjust") },
       { id: "split", icon: "split", label: "split", run: splitAtPlayhead },
+      { id: "select-more", icon: "dots", label: "selectMore", run: () => useEditor.getState().setMultiMode(true) },
       { id: "duplicate", icon: "duplicate", label: "duplicate", run: duplicateSelection },
       { id: "delete", icon: "trash", label: "delete", run: deleteSelection, danger: true },
     ];
@@ -64,6 +92,10 @@ export function Toolbar({ onImport, onImportMusic }: { onImport: () => void; onI
         },
       });
     }
+    if (c.kind === "video" && project && isWideIntoTall(project, c.assetId)) {
+      tools.push({ id: "reframe", icon: "canvas", label: "autoReframe", run: () => void autoReframe(c.id) });
+    }
+    tools.push({ id: "select-more", icon: "dots", label: "selectMore", run: () => useEditor.getState().setMultiMode(true) });
     tools.push({ id: "duplicate", icon: "duplicate", label: "duplicate", run: duplicateSelection });
     tools.push({ id: "delete", icon: "trash", label: "delete", run: deleteSelection, danger: true });
   } else {
@@ -86,11 +118,14 @@ export function Toolbar({ onImport, onImportMusic }: { onImport: () => void; onI
       className="no-scrollbar flex h-[72px] shrink-0 items-stretch gap-1 overflow-x-auto border-t border-line bg-surface px-2 pb-[env(safe-area-inset-bottom)]"
       aria-label="Tools"
     >
-      {selection && (
+      {(selection || multiMode) && (
         <button
           type="button"
           className="flex w-14 shrink-0 flex-col items-center justify-center gap-1 text-muted"
-          onClick={() => useEditor.getState().select(null)}
+          onClick={() => {
+            useEditor.getState().setMultiMode(false);
+            useEditor.getState().select(null);
+          }}
           aria-label={t("back")}
           data-testid="tool-back"
         >

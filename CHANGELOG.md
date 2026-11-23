@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.0 — Phase 2: full video editor
+
+### Added
+
+- Keyframes on every property (position, scale, rotation, opacity, crop, volume, effect parameters) with linear, ease, hold and bezier easing; keyframe markers on clips.
+- Crop with presets, 12 blend modes, freeze frame, reverse, speed ramps (6 presets), blur and image canvas backgrounds.
+- Roll, slip and slide edits; multi-select, grouping, delete many; timeline markers and beat markers.
+- 170+ effects (40 looks, colour wheels, curves, HSL, levels, LUT, keys, masks, blurs, distortions, stylize, retro, motion, light) and 86 transitions with easing.
+- `.cube` LUT import, auto colour match, chroma key with spill, luma key, rectangle/ellipse/linear/spotlight/pen masks.
+- AI in the browser: background removal (MediaPipe), auto reframe for 9:16 (object detection), auto captions with Whisper (Hindi, English, Hinglish, Urdu), karaoke word highlight, transcript editing, filler-word removal.
+- Beat detection with cut-to-beat; silence removal.
+- Export: WebM, GIF, transparent PNG sequence, H.265 option, social presets (Reels, Shorts, YouTube, X, WhatsApp).
+- Frame-exact paused preview (same decoder as export) and a 4K preview-vs-export pixel-diff test.
+- Diagnostics renders every effect and transition and reports GL errors.
+
+### Changed
+
+- Project schema stays version 1; new fields have defaults so Phase 1 projects open unchanged.
+- Exporter split into a shared render session plus per-format encoders.
+
 ## 0.1.0 — Phase 1: foundation + video editor MVP
 
 ### Added

@@ -113,6 +113,15 @@ export const CommandPayloads = {
       words: z.array(z.object({ text: z.string().max(200), startUs: MicrosSchema, endUs: MicrosSchema })).max(2000).optional(),
     }),
   }),
+  /** Slip: change what part of the source plays, keeping position and length. */
+  "clip/slip": z.object({ clipId: IdSchema, deltaUs: z.number().int() }),
+  /** Roll: move the cut between a main-track clip and the one before it. */
+  "clip/roll": z.object({ clipId: IdSchema, deltaUs: z.number().int() }),
+  /** Slide: move a main-track clip between its neighbours, which give and take time. */
+  "clip/slide": z.object({ clipId: IdSchema, deltaUs: z.number().int() }),
+  "clip/group": z.object({ clipIds: z.array(IdSchema).min(2).max(200), groupId: IdSchema }),
+  "clip/ungroup": z.object({ groupId: IdSchema }),
+  "clip/deleteMany": z.object({ clipIds: z.array(IdSchema).min(1).max(500) }),
   "clip/setSpeedCurve": z.object({ clipId: IdSchema, curve: SpeedCurveSchema.nullable() }),
   "clip/setKeyframe": z.object({
     clipId: IdSchema,
@@ -167,7 +176,10 @@ export const CommandPayloads = {
 } as const;
 
 export type CommandType = keyof typeof CommandPayloads | "batch";
-export type PayloadOf<T extends keyof typeof CommandPayloads> = z.infer<(typeof CommandPayloads)[T]>;
+/** What callers send: fields with defaults may be left out. */
+export type PayloadOf<T extends keyof typeof CommandPayloads> = z.input<(typeof CommandPayloads)[T]>;
+/** What handlers receive after validation. */
+type ParsedPayload<T extends keyof typeof CommandPayloads> = z.output<(typeof CommandPayloads)[T]>;
 
 export type SimpleCommand = {
   [K in keyof typeof CommandPayloads]: { type: K; payload: PayloadOf<K> };
@@ -309,7 +321,7 @@ function dropIfEmpty(seq: Sequence, track: Track): void {
   if (track.type !== "main" && track.clips.length === 0) seq.tracks = seq.tracks.filter((t) => t !== track);
 }
 
-type Handler<K extends keyof typeof CommandPayloads> = (draft: Project, payload: PayloadOf<K>) => void;
+type Handler<K extends keyof typeof CommandPayloads> = (draft: Project, payload: ParsedPayload<K>) => void;
 
 const handlers: { [K in keyof typeof CommandPayloads]: Handler<K> } = {
   "project/rename": (d, p) => {
@@ -489,11 +501,20 @@ const handlers: { [K in keyof typeof CommandPayloads]: Handler<K> } = {
       dropIfEmpty(seq, loc.track);
       return;
     }
+    const delta = p.startUs - clip.startUs;
     loc.track.clips.splice(loc.index, 1);
     clip.startUs = p.startUs;
     if (isMediaClip(clip)) clip.transitionIn = null;
     placeOnFreeTrack(seq, target, clip, p.newTrackId);
     if (loc.track !== target) dropIfEmpty(seq, loc.track);
+    // Grouped clips on free tracks follow by the same amount.
+    if (clip.groupId && delta !== 0) {
+      for (const t of seq.tracks) {
+        if (t.type === "main") continue;
+        for (const c of t.clips) if (c.id !== clip.id && c.groupId === clip.groupId) c.startUs = Math.max(0, c.startUs + delta);
+        sortTrack(t);
+      }
+    }
   },
 
   "clip/update": (d, p) => {
@@ -577,6 +598,76 @@ const handlers: { [K in keyof typeof CommandPayloads]: Handler<K> } = {
     }
     copy.startUs = clipEndUs(loc.clip);
     placeOnFreeTrack(loc.sequence, loc.track, copy, p.newTrackId);
+  },
+
+  "clip/slip": (d, p) => {
+    const { clip } = requireClip(d, p.clipId);
+    if (!isMediaClip(clip) || clip.kind === "image" || clip.holdFrame) fail("Only video and audio clips can slip");
+    const asset = getAsset(d, clip.assetId) ?? fail("Asset not found");
+    const span = sourceSpanUs(clip);
+    const maxIn = Math.max(0, asset.durationUs - span);
+    clip.sourceInUs = Math.min(maxIn, Math.max(0, clip.sourceInUs + Math.round(p.deltaUs * clip.speed)));
+  },
+
+  "clip/roll": (d, p) => {
+    const loc = requireClip(d, p.clipId);
+    if (loc.track.type !== "main" || loc.index === 0) fail("Roll needs a main-track clip with a clip before it");
+    const right = loc.clip;
+    const left = loc.track.clips[loc.index - 1]!;
+    let delta = p.deltaUs;
+    // Left may grow only as far as its source allows; right shrinks the same amount.
+    if (isMediaClip(left)) delta = Math.min(delta, maxClipDurationUs(left, getAsset(d, left.assetId)) - left.durationUs);
+    delta = Math.min(delta, right.durationUs - MIN_CLIP_DURATION_US);
+    delta = Math.max(delta, -(left.durationUs - MIN_CLIP_DURATION_US));
+    if (isMediaClip(right) && right.kind !== "image" && !right.holdFrame) {
+      delta = Math.max(delta, -Math.floor(right.sourceInUs / right.speed));
+      right.sourceInUs = Math.max(0, right.sourceInUs + Math.round(delta * right.speed));
+    }
+    left.durationUs += delta;
+    right.durationUs -= delta;
+  },
+
+  "clip/slide": (d, p) => {
+    const loc = requireClip(d, p.clipId);
+    if (loc.track.type !== "main") fail("Slide works on the main track");
+    const prev = loc.track.clips[loc.index - 1];
+    const next = loc.track.clips[loc.index + 1];
+    if (!prev || !next) fail("Slide needs clips on both sides");
+    let delta = p.deltaUs;
+    // Prev grows/shrinks by delta, next loses/gains the same at its start.
+    if (isMediaClip(prev)) delta = Math.min(delta, maxClipDurationUs(prev, getAsset(d, prev.assetId)) - prev.durationUs);
+    delta = Math.min(delta, next.durationUs - MIN_CLIP_DURATION_US);
+    delta = Math.max(delta, -(prev.durationUs - MIN_CLIP_DURATION_US));
+    if (isMediaClip(next) && next.kind !== "image" && !next.holdFrame) {
+      delta = Math.max(delta, -Math.floor(next.sourceInUs / next.speed));
+      next.sourceInUs = Math.max(0, next.sourceInUs + Math.round(delta * next.speed));
+    }
+    prev.durationUs += delta;
+    next.durationUs -= delta;
+  },
+
+  "clip/group": (d, p) => {
+    for (const id of p.clipIds) requireClip(d, id).clip.groupId = p.groupId;
+  },
+
+  "clip/ungroup": (d, p) => {
+    let found = false;
+    for (const seq of d.sequences)
+      for (const t of seq.tracks)
+        for (const c of t.clips)
+          if (c.groupId === p.groupId) {
+            c.groupId = null;
+            found = true;
+          }
+    if (!found) fail(`Group not found: ${p.groupId}`);
+  },
+
+  "clip/deleteMany": (d, p) => {
+    for (const id of p.clipIds) {
+      const loc = requireClip(d, id);
+      loc.track.clips.splice(loc.index, 1);
+      dropIfEmpty(loc.sequence, loc.track);
+    }
   },
 
   "clip/setSpeedCurve": (d, p) => {
@@ -778,7 +869,7 @@ function runOne(draft: Project, command: Command): void {
 
 /** Build the command that restores `before` from `after`, touching only what changed. */
 function buildInverse(before: Project, after: Project): Command {
-  const payload: PayloadOf<"internal/restore"> = {};
+  const payload: ParsedPayload<"internal/restore"> = {};
   if (before.name !== after.name) payload.name = before.name;
   if (before.activeSequenceId !== after.activeSequenceId) payload.activeSequenceId = before.activeSequenceId;
   if (JSON.stringify(before.assets) !== JSON.stringify(after.assets)) payload.assets = structuredClone(before.assets);
@@ -847,6 +938,12 @@ export function describeCommand(command: Command): string {
     "clip/removeEffect": "Remove effect",
     "clip/duplicate": "Duplicate",
     "clip/setSpeedCurve": "Speed ramp",
+    "clip/slip": "Slip",
+    "clip/roll": "Roll",
+    "clip/slide": "Slide",
+    "clip/group": "Group",
+    "clip/ungroup": "Ungroup",
+    "clip/deleteMany": "Delete clips",
     "clip/setKeyframe": "Keyframe",
     "clip/removeKeyframe": "Remove keyframe",
     "clip/clearKeyframes": "Clear keyframes",

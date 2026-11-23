@@ -19,7 +19,7 @@ import {
 } from "@just-see/schema";
 import { currentProject, useEditor, useProject } from "@/lib/editor-store";
 import { haptic } from "@/lib/theme";
-import { useT } from "@/lib/i18n";
+import { useT, type MessageKey } from "@/lib/i18n";
 import { ClipBlock } from "./ClipBlock";
 
 const ROW_H: Record<Track["type"], number> = { main: 60, video: 44, text: 34, audio: 40 };
@@ -80,6 +80,8 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
   const project = useProject();
   const pps = useEditor((s) => s.pxPerSecond);
   const selection = useEditor((s) => s.selection);
+  const multi = useEditor((s) => s.multi);
+  const editMode = useEditor((s) => s.editMode);
   const viewportRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<Drag | null>(null);
@@ -267,10 +269,26 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
         timeUs = Math.round(loc.clip.startUs + (raw - d.origEdge));
       }
       d.lastCmd = { type: "clip/trim", payload: { clipId: d.clipId, edge: d.edge, timeUs } };
+      if (s.editMode === "roll" && loc.track.type === "main") {
+        const deltaUs = Math.round(raw - d.origEdge);
+        const target = d.edge === "start" ? loc.clip.id : loc.track.clips[loc.index + 1]?.id;
+        if (target) d.lastCmd = { type: "clip/roll", payload: { clipId: target, deltaUs } };
+      }
       s.preview(d.lastCmd);
       return;
     }
     if (d.kind === "move") {
+      if (s.editMode === "slip" || s.editMode === "slide") {
+        const dxUs = Math.round(((e.clientX - d.startX) / pps0) * 1e6);
+        if (!d.moved && Math.abs(e.clientX - d.startX) < 6) return;
+        d.moved = true;
+        d.lastCmd =
+          s.editMode === "slip"
+            ? { type: "clip/slip", payload: { clipId: d.clipId, deltaUs: -dxUs } }
+            : { type: "clip/slide", payload: { clipId: d.clipId, deltaUs: dxUs } };
+        s.preview(d.lastCmd);
+        return;
+      }
       const dx = e.clientX - d.startX;
       const dy = e.clientY - d.startY;
       if (!d.moved && Math.hypot(dx, dy) < 6) return;
@@ -322,6 +340,12 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
     dragRef.current = null;
     if (d.kind === "pan") {
       if (!d.moved) {
+        if (d.tapClip && (s.multiMode || e.shiftKey)) {
+          if (!s.multiMode) s.setMultiMode(true);
+          s.toggleMulti(d.tapClip);
+          if (!s.selection) s.select({ kind: "clip", clipId: d.tapClip });
+          return;
+        }
         if (d.tapClip) s.select({ kind: "clip", clipId: d.tapClip });
         else s.select(null);
         return;
@@ -416,7 +440,7 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
                 asset={isMediaClip(c) ? getAsset(project, c.assetId) : undefined}
                 pps={pps}
                 height={r.height}
-                selected={selection?.kind === "clip" && selection.clipId === c.id}
+                selected={(selection?.kind === "clip" && selection.clipId === c.id) || multi.includes(c.id)}
                 trackColor={TRACK_COLOR[r.track.type]}
               />
             ))}
@@ -463,6 +487,24 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
           </div>
         ))}
       </div>
+      {selection?.kind === "clip" && (
+        <div className="absolute right-1 top-1 z-30 flex gap-0.5 rounded-lg bg-surface-2/90 p-0.5 text-[10px]" role="radiogroup" aria-label="Edit mode">
+          {(["trim", "roll", "slip", "slide"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              role="radio"
+              aria-checked={editMode === m}
+              data-testid={`edit-mode-${m}`}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => useEditor.getState().setEditMode(m)}
+              className={`rounded-md px-2 py-1 ${editMode === m ? "bg-accent text-accent-contrast" : "text-muted"}`}
+            >
+              {t(`mode_${m}` as MessageKey)}
+            </button>
+          ))}
+        </div>
+      )}
       {/* Playhead */}
       <div className="pointer-events-none absolute inset-y-0 z-20 w-0.5 bg-fg" style={{ left: width / 2 - 1 }}>
         <div className="absolute -left-[5px] top-0 h-3 w-3 rotate-45 rounded-sm bg-fg" />

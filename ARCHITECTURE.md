@@ -125,6 +125,17 @@ Known Phase 1 limits:
 - Clip gain above 100% is heard in export but capped at 100% in preview.
 - Export runs on the main thread. Moving it to a worker is planned.
 
+## Phase 2 additions
+
+- **Keyframes** (`schema/src/keyframes.ts`): per-clip map of property → sorted keyframes in clip-local µs. `resolveFrame` samples them (`animatedTransform`, `animatedCrop`, `animatedEffects`); the mixer samples `volume`. Split and trim cut keyframes so values stay continuous.
+- **Speed ramps**: piecewise-linear multipliers over the clip; `sourceOffsetAt` integrates them (and handles reverse and freeze frames). Preview drives `playbackRate` per frame; export reads exact source times.
+- **Compositor**: crop via the UV matrix, blend modes via a shader that reads the frame so far, 3D LUT textures, a mask pass for AI background removal.
+- **Render session** (`engine/src/export/session.ts`): shared by MP4, WebM, GIF and PNG-sequence exports and by caption audio mixing.
+- **Frame-exact pause**: when paused, the preview swaps `<video>` frames for frames from the same WebCodecs decoder export uses, so stills match exports exactly.
+- **AI in the browser**: MediaPipe Tasks (segmentation for background removal, object detection for auto reframe) with the wasm runtime served from `/vendor/mediapipe`; Whisper through transformers.js for captions. Models download on first use and are cached by the browser.
+- **Analysis**: beat detection, silence detection, colour statistics and reframe planning are pure functions with unit tests.
+- **New commands**: `clip/setKeyframe`, `clip/removeKeyframe`, `clip/clearKeyframes`, `clip/setSpeedCurve`, `clip/freeze`, `clip/slip`, `clip/roll`, `clip/slide`, `clip/group`, `clip/ungroup`, `clip/deleteMany`, `timeline/rippleDelete`, `marker/add`, `marker/remove`, `marker/setBeats`.
+
 ## Web app
 
 - Next.js App Router, **static export** (`output: "export"`). Everything runs on the device; no server is needed in Phase 1.

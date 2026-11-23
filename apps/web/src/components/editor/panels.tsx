@@ -362,6 +362,20 @@ export function TransitionPanel() {
           </button>
         ))}
       </div>
+      {current && (
+        <div className="no-scrollbar flex gap-2 overflow-x-auto py-1">
+          {(["linear", "ease-in", "ease-out", "ease-in-out"] as const).map((e) => (
+            <Chip
+              key={e}
+              active={(current.ease ?? "ease-in-out") === e}
+              testId={`tr-ease-${e}`}
+              onClick={() => useEditor.getState().dispatch({ type: "clip/setTransition", payload: { clipId: c.id, transition: { ...current, ease: e } } })}
+            >
+              {t(`ease_${e}` as MessageKey)}
+            </Chip>
+          ))}
+        </div>
+      )}
       <CommitSlider
         label={t("duration")}
         value={duration / 1e6}
@@ -371,7 +385,7 @@ export function TransitionPanel() {
         format={(v) => `${v.toFixed(1)}s`}
         toCommand={(v) => {
           setDur(secondsToUs(v));
-          return { type: "clip/setTransition", payload: { clipId: c.id, transition: { type: current?.type ?? "crossfade", durationUs: secondsToUs(v) } } };
+          return { type: "clip/setTransition", payload: { clipId: c.id, transition: { type: current?.type ?? "crossfade", durationUs: secondsToUs(v), ease: current?.ease } } };
         }}
       />
       {current && (
@@ -391,6 +405,27 @@ export function TransitionPanel() {
 }
 
 // ---------- Text ----------
+interface TextTemplate {
+  id: string;
+  label: string;
+  preview: string;
+  style: Partial<TextStyle>;
+  animIn: TextAnimation;
+  animOut: TextAnimation;
+  transform: Partial<Transform>;
+}
+
+const TEXT_TEMPLATES: TextTemplate[] = [
+  { id: "title", label: "Title", preview: "#ffffff", style: { fontSize: 0.075, fontWeight: 900, strokeWidth: 0.06, color: "#ffffff", backgroundOpacity: 0 }, animIn: "pop", animOut: "fade", transform: { y: 0 } },
+  { id: "subtitle", label: "Subtitle", preview: "#f2f3f5", style: { fontSize: 0.035, fontWeight: 500, strokeWidth: 0, shadow: true, backgroundOpacity: 0 }, animIn: "fade", animOut: "fade", transform: { y: 0.32 } },
+  { id: "lower-third", label: "Lower third", preview: "#ff8a1f", style: { fontSize: 0.038, fontWeight: 700, align: "left", backgroundColor: "#ff8a1f", backgroundOpacity: 0.9, color: "#1a0d00", shadow: false }, animIn: "slide-right", animOut: "slide-left", transform: { x: -0.12, y: 0.25 } },
+  { id: "neon", label: "Neon", preview: "#bf5af2", style: { fontSize: 0.06, fontWeight: 800, color: "#ffffff", strokeColor: "#bf5af2", strokeWidth: 0.1, shadow: true }, animIn: "blur", animOut: "blur", transform: { y: -0.1 } },
+  { id: "typewriter", label: "Typewriter", preview: "#ffd60a", style: { fontFamily: "ui-monospace, 'Courier New', monospace", fontSize: 0.045, fontWeight: 600, color: "#ffd60a" }, animIn: "typewriter", animOut: "fade", transform: { y: 0 } },
+  { id: "quote", label: "Quote", preview: "#ffffff", style: { fontFamily: "Georgia, 'Noto Serif', serif", italic: true, fontSize: 0.045, fontWeight: 400, backgroundColor: "#000000", backgroundOpacity: 0.5 }, animIn: "slide-up", animOut: "fade", transform: { y: 0 } },
+  { id: "big-number", label: "Big number", preview: "#34c759", style: { fontSize: 0.18, fontWeight: 900, color: "#34c759", strokeWidth: 0.04 }, animIn: "zoom", animOut: "pop", transform: { y: -0.05 } },
+  { id: "sticker", label: "Sticker", preview: "#ff375f", style: { fontSize: 0.05, fontWeight: 800, color: "#ffffff", backgroundColor: "#ff375f", backgroundOpacity: 1, shadow: true }, animIn: "pop", animOut: "pop", transform: { rotation: -6 } },
+];
+
 export function TextPanel() {
   const t = useT();
   const loc = useSelectedClip();
@@ -414,6 +449,25 @@ export function TextPanel() {
         useEditor.getState().openPanel(null);
       }}
     >
+      <div className="no-scrollbar mb-2 flex gap-2 overflow-x-auto">
+        {TEXT_TEMPLATES.map((tpl) => (
+          <Chip
+            key={tpl.id}
+            testId={`text-tpl-${tpl.id}`}
+            onClick={() =>
+              useEditor.getState().dispatch({
+                type: "clip/update",
+                payload: {
+                  clipId: clip.id,
+                  patch: { style: tpl.style, animationIn: tpl.animIn, animationOut: tpl.animOut, transform: tpl.transform },
+                },
+              })
+            }
+          >
+            <span style={{ fontWeight: tpl.style.fontWeight, color: tpl.preview }}>{tpl.label}</span>
+          </Chip>
+        ))}
+      </div>
       <textarea
         autoFocus
         value={value}

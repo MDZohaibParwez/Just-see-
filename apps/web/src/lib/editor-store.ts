@@ -55,6 +55,11 @@ interface EditorState {
   toasts: Toast[];
   /** Bumps on every committed change; used by autosave. */
   revision: number;
+  /** What dragging a selected clip does. */
+  editMode: "trim" | "roll" | "slip" | "slide";
+  /** Extra clips selected for group actions. */
+  multi: string[];
+  multiMode: boolean;
 
   load(project: Project): void;
   unload(): void;
@@ -70,6 +75,9 @@ interface EditorState {
   toast(message: string, kind?: Toast["kind"]): void;
   dismissToast(id: number): void;
   setSaveState(s: EditorState["saveState"]): void;
+  setEditMode(m: EditorState["editMode"]): void;
+  toggleMulti(clipId: string): void;
+  setMultiMode(on: boolean): void;
 }
 
 export const MIN_PX_PER_SECOND = 8;
@@ -87,6 +95,9 @@ export const useEditor = create<EditorState>((set, get) => ({
   saveState: "idle",
   toasts: [],
   revision: 0,
+  editMode: "trim",
+  multi: [],
+  multiMode: false,
 
   load(project) {
     set({
@@ -197,6 +208,18 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   setSaveState(saveState) {
     set({ saveState });
+  },
+
+  setEditMode(editMode) {
+    set({ editMode });
+  },
+
+  toggleMulti(clipId) {
+    set((s) => ({ multi: s.multi.includes(clipId) ? s.multi.filter((x) => x !== clipId) : [...s.multi, clipId] }));
+  },
+
+  setMultiMode(multiMode) {
+    set((s) => ({ multiMode, multi: multiMode && s.selection?.kind === "clip" ? [s.selection.clipId] : [] }));
   },
 }));
 

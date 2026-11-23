@@ -217,3 +217,63 @@ describe("ripple delete range", () => {
     expect(getSequence(p).tracks.length).toBe(2);
   });
 });
+
+describe("roll, slip, slide and groups", () => {
+  function three(): Project {
+    let p = createProject({ id: "p" });
+    for (const id of ["a", "b", "c"]) {
+      const a = asset(id, 10);
+      p = run(p, { type: "asset/add", payload: { asset: a } }, { type: "clip/add", payload: { clip: createMediaClip(a, { id, durationUs: S(4) }) } });
+    }
+    // Leave room in the sources on both sides.
+    return run(p, { type: "clip/trim", payload: { clipId: "b", edge: "start", timeUs: S(5) } });
+  }
+
+  it("slips the source without moving the clip", () => {
+    const p = run(three(), { type: "clip/slip", payload: { clipId: "b", deltaUs: S(2) } });
+    expect(main(p)[1]).toMatchObject({ startUs: S(4), durationUs: S(3), sourceInUs: S(3) });
+    const p2 = run(three(), { type: "clip/slip", payload: { clipId: "b", deltaUs: S(50) } });
+    expect(main(p2)[1]!.sourceInUs).toBe(S(7));
+  });
+
+  it("rolls a cut and keeps the total length", () => {
+    const before = sequenceLength(three());
+    const p = run(three(), { type: "clip/roll", payload: { clipId: "b", deltaUs: S(1) } });
+    expect(main(p).map((c) => c.durationUs)).toEqual([S(5), S(2), S(4)]);
+    expect(main(p)[1]!.sourceInUs).toBe(S(2));
+    expect(sequenceLength(p)).toBe(before);
+  });
+
+  it("slides a clip between its neighbours", () => {
+    const before = sequenceLength(three());
+    const p = run(three(), { type: "clip/slide", payload: { clipId: "b", deltaUs: S(1) } });
+    expect(main(p).map((c) => [c.startUs, c.durationUs])).toEqual([
+      [0, S(5)],
+      [S(5), S(3)],
+      [S(8), S(3)],
+    ]);
+    expect(main(p)[2]!.sourceInUs).toBe(S(1));
+    expect(sequenceLength(p)).toBe(before);
+  });
+
+  it("moves grouped clips together and deletes many", async () => {
+    const { createTextClip } = await import("./index");
+    let p = run(
+      oneClip(),
+      { type: "clip/add", payload: { clip: createTextClip({ id: "t1", startUs: 0, durationUs: S(1) }), newTrackId: "x1" } },
+      { type: "clip/add", payload: { clip: createTextClip({ id: "t2", startUs: S(2), durationUs: S(1) }), trackId: "x1" } },
+      { type: "clip/group", payload: { clipIds: ["t1", "t2"], groupId: "g" } },
+      { type: "clip/move", payload: { clipId: "t1", trackId: "x1", startUs: S(1) } },
+    );
+    const tt = getSequence(p).tracks.find((t) => t.id === "x1")!;
+    expect(tt.clips.map((c) => c.startUs)).toEqual([S(1), S(3)]);
+    p = run(p, { type: "clip/deleteMany", payload: { clipIds: ["t1", "t2"] } });
+    expect(getSequence(p).tracks.some((t) => t.id === "x1")).toBe(false);
+  });
+});
+
+function sequenceLength(p: Project): number {
+  const clips = main(p);
+  const last = clips[clips.length - 1]!;
+  return last.startUs + last.durationUs;
+}

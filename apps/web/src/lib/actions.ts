@@ -298,3 +298,27 @@ export async function addBgRemoval(clipId: string): Promise<void> {
   const seg = await loadSegmenter();
   if (!seg) useEditor.getState().toast(tr("importFailed"), "error");
 }
+
+/** Follow the main subject when a wide clip sits in a tall canvas. */
+export async function autoReframe(clipId: string): Promise<void> {
+  const p = committed();
+  const loc = p ? findClip(p, clipId) : undefined;
+  if (!p || !loc || !isMediaClip(loc.clip) || loc.clip.kind !== "video") return;
+  const clip = loc.clip;
+  const asset = p.assets.find((a) => a.id === clip.assetId);
+  if (!asset) return;
+  useEditor.getState().toast(tr("reframing"));
+  const [{ reframePlan }, { findSubjects }] = await Promise.all([import("@just-see/engine"), import("./detect")]);
+  const span = clip.durationUs * clip.speed;
+  const samples = await findSubjects(asset, clip.sourceInUs, clip.sourceInUs + span, 500_000);
+  const seq = getSequence(p);
+  const plan = reframePlan(samples, asset.width / asset.height, seq.width / seq.height, { sourceInUs: clip.sourceInUs, speed: clip.speed });
+  const commands: Command[] = [
+    { type: "clip/clearKeyframes", payload: { clipId, prop: "x" } },
+    { type: "clip/update", payload: { clipId, patch: { transform: { scale: plan.scale, x: 0 } } } },
+    ...plan.x
+      .filter((k) => k.t <= clip.durationUs)
+      .map((k) => ({ type: "clip/setKeyframe", payload: { clipId, prop: "x", t: k.t, v: k.v, ease: k.ease } }) as Command),
+  ];
+  if (useEditor.getState().dispatch({ type: "batch", payload: { label: "Auto reframe", commands } })) useEditor.getState().toast(tr("reframed"));
+}

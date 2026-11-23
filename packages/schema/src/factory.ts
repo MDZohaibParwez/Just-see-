@@ -104,6 +104,7 @@ export function createMediaClip(asset: Asset, opts: { id?: string; startUs?: num
     assetId: asset.id,
     startUs: opts.startUs ?? 0,
     durationUs: duration,
+    groupId: null,
     sourceInUs: 0,
     speed: 1,
     volume: 1,
@@ -143,6 +144,7 @@ export function createTextClip(opts: { id?: string; text?: string; startUs?: num
   return {
     id: opts.id ?? createId("c_"),
     kind: "text",
+    groupId: null,
     startUs: opts.startUs ?? 0,
     durationUs: opts.durationUs ?? DEFAULT_TEXT_DURATION_US,
     text: opts.text ?? "Your text",

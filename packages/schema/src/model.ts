@@ -47,14 +47,16 @@ export const EffectInstanceSchema = z.object({
 });
 export type EffectInstance = z.infer<typeof EffectInstanceSchema>;
 
+export const EasingSchema = z.enum(["linear", "ease-in", "ease-out", "ease-in-out", "hold", "bezier"]);
+export type Easing = z.infer<typeof EasingSchema>;
+
 export const TransitionSchema = z.object({
   type: z.string().min(1).max(64),
   durationUs: MicrosSchema,
+  /** Easing of the transition progress. */
+  ease: EasingSchema.default("ease-in-out"),
 });
 export type Transition = z.infer<typeof TransitionSchema>;
-
-export const EasingSchema = z.enum(["linear", "ease-in", "ease-out", "ease-in-out", "hold", "bezier"]);
-export type Easing = z.infer<typeof EasingSchema>;
 
 /** One keyframe. `t` is clip-local time (µs from the clip's start on the timeline). */
 export const KeyframeSchema = z.object({
@@ -150,6 +152,8 @@ const ClipBase = {
   id: IdSchema,
   startUs: MicrosSchema,
   durationUs: MicrosSchema,
+  /** Clips with the same group id move together. */
+  groupId: IdSchema.nullable().default(null),
 };
 
 export const MediaClipSchema = z.object({

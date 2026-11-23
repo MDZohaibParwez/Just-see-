@@ -9,7 +9,7 @@ Just See is an all-in-one creative studio that runs in the browser. Creators can
 - 🤖 **Works with Claude.** A built-in Claude connector (remote MCP server) lets Claude create and edit projects end to end.
 - 🌏 **Made for Indian creators.** Captions in Hindi, English, Hinglish and Urdu; correct Devanagari, Nastaliq and Gujarati text; Hindi and English UI from day one.
 
-> **Status:** ✅ Phase 1 (foundation + video editor MVP) is built: import, timeline editing, text, 30 effects, 20 transitions, MP4 export, autosave and PWA. Phase 2 is next. See [Roadmap](#roadmap).
+> **Status:** ✅ Phase 1 and ✅ Phase 2 (full video editor) are built: 170+ effects, 86 transitions, keyframes, LUTs, chroma key, AI background removal, auto captions (Hindi/English/Hinglish/Urdu), beat sync, auto reframe, 4K export. A few items need the GPU server (Phase 6) — see [docs/phase2-status.md](docs/phase2-status.md). Phase 3 (audio studio) is next.
 
 ---
 
@@ -215,7 +215,7 @@ pnpm test:e2e     # Playwright (builds needed first: pnpm build)
 
 **Check a device:** open `/diagnostics` to see WebGL2, WebCodecs, the chosen encoders and whether every shader compiles.
 
-**Keyboard (desktop):** Space play/pause · S split · Delete delete · Ctrl+Z / Ctrl+Shift+Z undo/redo · Ctrl+D duplicate · ← → step a frame · + / − zoom · T add text · I import · Ctrl+E export.
+**Keyboard (desktop):** Space play/pause · S split · Delete delete · Ctrl+Z / Ctrl+Shift+Z undo/redo · Ctrl+D duplicate · ← → step a frame · + / − zoom · T add text · M marker · I import · Ctrl+E export · Shift+click multi-select.
 
 ## Roadmap
 
@@ -224,8 +224,8 @@ Phases are built strictly in order. A phase is done only when its check passes.
 | # | Phase | Done when | Status |
 | --- | --- | --- | --- |
 | 1 | **Foundation + video MVP**: monorepo, schema, commands, engine, import, timeline (cut, trim, split, speed), text, 20 transitions, 30 effects, MP4 export, autosave, PWA | A 60 s 9:16 reel with 5 clips, text and music exports correctly from a phone browser | ✅ Done |
-| 2 | **Full video editor**: all of Module 1, incl. auto captions, background removal, beat sync | Every video feature passes E2E tests and a 4K export matches the preview frame-for-frame | ⏳ Next |
-| 3 | **Audio studio**: Edit mode, then Produce mode | A noisy phone voice recording becomes a clean -14 LUFS export in one tap, and a 16-bar beat can be built | ⬜ |
+| 2 | **Full video editor**: all of Module 1, incl. auto captions, background removal, beat sync | Every video feature passes E2E tests and a 4K export matches the preview frame-for-frame | ✅ Done ([status](docs/phase2-status.md)) |
+| 3 | **Audio studio**: Edit mode, then Produce mode | A noisy phone voice recording becomes a clean -14 LUFS export in one tap, and a 16-bar beat can be built | ⏳ Next |
 | 4 | **Motion studio**: layers, keyframes, graph editor, shapes, text animators, effects, Lottie | An animated lower-third and a logo reveal can be built and dropped into a video | ⬜ |
 | 5 | **Assets, templates, accounts, cloud sync** | One search covers fonts, music and SFX, and every asset carries license data | ⬜ |
 | 6 | **Claude connector + server render** | Claude, using only the connector, turns 3 clips into a captioned 30 s reel and returns a download link | ⬜ |
@@ -269,6 +269,7 @@ These rules apply to every contribution:
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Project model, command system, engine, pipelines |
 | [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) | Every dependency and its license |
 | [CHANGELOG.md](CHANGELOG.md) | What changed in each release |
+| [docs/phase2-status.md](docs/phase2-status.md) | Module 1 feature-by-feature status |
 | [docs/asset-sources.md](docs/asset-sources.md) | Asset provider terms *(coming in Phase 5)* |
 
 ---

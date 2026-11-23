@@ -1,5 +1,6 @@
 import {
   NO_CROP,
+  applyEasing,
   clipEndUs,
   getAsset,
   sampleKeyframes,
@@ -313,7 +314,9 @@ export function resolveFrame(project: Project, t: number, sequenceId?: string): 
         const to = mediaLayer(project, incoming, track.id, t);
         if (from && to) {
           const raw = (t - incoming.startUs) / incoming.transitionIn.durationUs;
-          layers.push({ kind: "transition", type: incoming.transitionIn.type, progress: smooth(clamp01(raw)), from, to });
+          const ease = incoming.transitionIn.ease ?? "ease-in-out";
+          const progress = ease === "ease-in-out" ? smooth(clamp01(raw)) : applyEasing(ease, clamp01(raw));
+          layers.push({ kind: "transition", type: incoming.transitionIn.type, progress, from, to });
           continue;
         }
       }
