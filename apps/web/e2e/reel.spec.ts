@@ -18,6 +18,9 @@ test("60 s 9:16 reel with 5 clips, text and music exports correctly", async ({ p
   await page.getByTestId("media-input").setInputFiles(["clip1.mp4", "clip2.mp4", "clip3.mp4", "clip4.mp4", "clip5.mp4"].map(fixture));
   await expect.poll(() => mainClipCount(page), { timeout: 60_000 }).toBe(5);
 
+  // Zoom the timeline out so the first cut is on screen.
+  await page.keyboard.press("Home");
+  for (let i = 0; i < 5; i++) await page.keyboard.press("-");
   // Crossfade between clip 1 and 2 → 5 × 12.1 − 0.5 = 60.0 s.
   await page.getByTestId("transition-button").first().click();
   await page.getByTestId("transition-crossfade").click();

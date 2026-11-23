@@ -20,7 +20,8 @@ test("import, split, undo/redo, speed, text, delete and autosave", async ({ page
   await page.getByTestId("redo").click();
   await expect.poll(() => mainClipCount(page)).toBe(3);
 
-  // Selected clip after split: change speed to 2x.
+  // Select the right half of the split and change speed to 2x.
+  await page.getByTestId("track-main").getByTestId("timeline-clip").nth(1).click();
   await page.getByTestId("tool-speed").click();
   await page.getByTestId("speed-2").click();
   await page.getByTestId("sheet-done").click();
