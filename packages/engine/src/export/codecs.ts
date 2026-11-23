@@ -37,6 +37,8 @@ export function videoCodecCandidates(width: number, height: number, fps: number)
     { mux: "avc", codec: `avc1.6400${lvl}`, label: "H.264 High" },
     { mux: "avc", codec: `avc1.4d00${lvl}`, label: "H.264 Main" },
     { mux: "avc", codec: `avc1.4200${lvl}`, label: "H.264 Baseline" },
+    { mux: "hevc", codec: "hvc1.1.6.L120.90", label: "H.265" },
+    { mux: "hevc", codec: "hev1.1.6.L153.90", label: "H.265" },
     { mux: "vp9", codec: "vp09.00.50.08", label: "VP9" },
     { mux: "av1", codec: "av01.0.12M.08", label: "AV1" },
   ];
@@ -54,8 +56,16 @@ export function defaultVideoBitrate(width: number, height: number, fps: number):
   return Math.round(base * (fps > 30 ? 1.5 : 1));
 }
 
-export async function pickVideoCodec(width: number, height: number, fps: number, bitrate: number): Promise<VideoCodecChoice & { config: VideoEncoderConfig }> {
-  for (const c of videoCodecCandidates(width, height, fps)) {
+export async function pickVideoCodec(
+  width: number,
+  height: number,
+  fps: number,
+  bitrate: number,
+  prefer: readonly MuxVideoCodec[] = ["avc", "hevc", "vp9", "av1"],
+): Promise<VideoCodecChoice & { config: VideoEncoderConfig }> {
+  const all = videoCodecCandidates(width, height, fps);
+  const ordered = prefer.flatMap((m) => all.filter((c) => c.mux === m));
+  for (const c of ordered) {
     const config: VideoEncoderConfig = {
       codec: c.codec,
       width,
@@ -64,6 +74,7 @@ export async function pickVideoCodec(width: number, height: number, fps: number,
       framerate: fps,
       latencyMode: "quality",
       ...(c.mux === "avc" ? { avc: { format: "avc" as const } } : {}),
+      ...(c.mux === "hevc" ? ({ hevc: { format: "hevc" } } as Record<string, unknown>) : {}),
     };
     try {
       const r = await VideoEncoder.isConfigSupported(config);
@@ -82,9 +93,14 @@ export async function pickVideoCodec(width: number, height: number, fps: number,
   throw new Error("This browser cannot encode video. Try Chrome on Android or desktop.");
 }
 
-export async function pickAudioCodec(sampleRate: number, channels: number, bitrate: number): Promise<(AudioCodecChoice & { config: AudioEncoderConfig }) | null> {
+export async function pickAudioCodec(
+  sampleRate: number,
+  channels: number,
+  bitrate: number,
+  prefer: readonly MuxAudioCodec[] = ["aac", "opus"],
+): Promise<(AudioCodecChoice & { config: AudioEncoderConfig }) | null> {
   if (typeof AudioEncoder === "undefined") return null;
-  for (const c of AUDIO_CODEC_CANDIDATES) {
+  for (const c of AUDIO_CODEC_CANDIDATES.filter((x) => prefer.includes(x.mux))) {
     const config: AudioEncoderConfig = { codec: c.codec, sampleRate, numberOfChannels: channels, bitrate };
     try {
       const r = await AudioEncoder.isConfigSupported(config);

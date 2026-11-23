@@ -15,10 +15,11 @@ GPL/AGPL code is not allowed. Update this file whenever a dependency changes.
 | [idb](https://github.com/jakearchibald/idb) | 8.0.4 | ISC | IndexedDB wrapper (projects, versions, thumbnails) |
 | [mp4box](https://github.com/gpac/mp4box.js) | 2.6.0 | BSD-3-Clause | MP4/MOV demuxing |
 | [mp4-muxer](https://github.com/Vanilagy/mp4-muxer) | 5.2.2 | MIT | MP4 muxing for export |
+| [webm-muxer](https://github.com/Vanilagy/webm-muxer) | 5.1.4 | MIT | WebM muxing for export |
 
 Notes:
 
-- `mp4-muxer` is marked deprecated upstream in favour of Mediabunny. Mediabunny
+- `mp4-muxer` and `webm-muxer` are marked deprecated upstream in favour of Mediabunny. Mediabunny
   is MPL-2.0, which is not on our allowed list, so we stay on `mp4-muxer` (MIT)
   until a decision is made.
 - ffmpeg.wasm is **not** used in Phase 1. When added it will be the LGPL build,
@@ -37,6 +38,9 @@ Notes:
 
 The E2E fixture script calls the system `ffmpeg` binary to generate test media.
 It is a developer tool and is never bundled.
+
+Written in this project (no third-party code): GIF encoder (`packages/engine/src/export/gif.ts`),
+ZIP writer, `.cube` LUT parser, beat/silence detection, all effect and transition shaders.
 
 ## Assets
 

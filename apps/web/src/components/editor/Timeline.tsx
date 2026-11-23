@@ -397,6 +397,16 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
             </div>
           ))}
         </div>
+        {seq.markers.map((m) => (
+          <div
+            key={m.id}
+            data-testid={m.kind === "beat" ? "beat-marker" : "marker"}
+            className="pointer-events-none absolute top-0 w-px"
+            style={{ left: (m.timeUs / 1e6) * pps, height: contentH, background: m.kind === "beat" ? "rgba(255,214,10,0.35)" : m.color }}
+          >
+            <span className="absolute -left-1 top-0 h-2 w-2 rotate-45" style={{ background: m.color }} />
+          </div>
+        ))}
         {rows.map((r) => (
           <div key={r.track.id} className="absolute left-0" style={{ top: r.top, height: r.height }} data-testid={`track-${r.track.type}`}>
             {r.track.clips.map((c) => (

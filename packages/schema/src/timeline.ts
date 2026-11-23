@@ -216,6 +216,7 @@ export function snapTime(t: number, candidates: readonly number[], thresholdUs: 
 export function collectSnapPoints(seq: Sequence, opts: { excludeClipId?: string; playheadUs?: number } = {}): number[] {
   const points = new Set<number>([0]);
   if (opts.playheadUs !== undefined) points.add(opts.playheadUs);
+  for (const m of seq.markers ?? []) points.add(m.timeUs);
   for (const t of seq.tracks) {
     for (const c of t.clips) {
       if (c.id === opts.excludeClipId) continue;

@@ -81,6 +81,9 @@ importers:
       mp4box:
         specifier: 2.6.0
         version: 2.6.0
+      webm-muxer:
+        specifier: 5.1.4
+        version: 5.1.4
     devDependencies:
       typescript:
         specifier: 5.9.3
@@ -1190,6 +1193,10 @@ packages:
       jsdom:
         optional: true
 
+  webm-muxer@5.1.4:
+    resolution: {integrity: sha512-ditzgFVFbfqPaugkIr4mGhAdob5K9HY6Rzlh7TRsA368yA1sp/m5O7nQCcMLdgFDeNGtFPg8B+MeXLtpzKWX6Q==}
+    deprecated: This library is superseded by Mediabunny. Please migrate to it.
+
   why-is-node-running@2.3.0:
     resolution: {integrity: sha512-hUrmaWBdVDcxvYqnyh09zunKzROWjbZTiNy8dBEjkS7ehEDQibXJ7XvlmtbwuTclUiIyN+CyXQD4Vmko8fNm8w==}
     engines: {node: '>=8'}
@@ -2083,6 +2090,11 @@ snapshots:
       - terser
       - tsx
       - yaml
+
+  webm-muxer@5.1.4:
+    dependencies:
+      '@types/dom-webcodecs': 0.1.19
+      '@types/wicg-file-system-access': 2020.9.8
 
   why-is-node-running@2.3.0:
     dependencies:

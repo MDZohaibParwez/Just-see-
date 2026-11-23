@@ -4,6 +4,7 @@ import {
   BackgroundSchema,
   BlendModeSchema,
   CropSchema,
+  MarkerSchema,
   EasingSchema,
   SpeedCurveSchema,
   ClipSchema,
@@ -145,6 +146,9 @@ export const CommandPayloads = {
   }),
   "clip/removeEffect": z.object({ clipId: IdSchema, effectId: IdSchema }),
   "clip/duplicate": z.object({ clipId: IdSchema, newClipId: IdSchema, newTrackId: IdSchema.optional() }),
+  "marker/add": z.object({ ...SeqRef, marker: MarkerSchema }),
+  "marker/remove": z.object({ ...SeqRef, markerId: IdSchema }),
+  "marker/setBeats": z.object({ ...SeqRef, timesUs: z.array(MicrosSchema).max(5000), idPrefix: z.string().min(1).max(40) }),
   "internal/restore": z.object({
     name: z.string().optional(),
     activeSequenceId: z.string().optional(),
@@ -644,6 +648,30 @@ const handlers: { [K in keyof typeof CommandPayloads]: Handler<K> } = {
     }
   },
 
+  "marker/add": (d, p) => {
+    const seq = getSequence(d, p.sequenceId);
+    if (seq.markers.some((m) => m.id === p.marker.id)) fail(`Marker id already exists: ${p.marker.id}`);
+    seq.markers = [...seq.markers, p.marker].sort((a, b) => a.timeUs - b.timeUs);
+  },
+
+  "marker/remove": (d, p) => {
+    const seq = getSequence(d, p.sequenceId);
+    if (!seq.markers.some((m) => m.id === p.markerId)) fail(`Marker not found: ${p.markerId}`);
+    seq.markers = seq.markers.filter((m) => m.id !== p.markerId);
+  },
+
+  "marker/setBeats": (d, p) => {
+    const seq = getSequence(d, p.sequenceId);
+    const beats = [...new Set(p.timesUs)].sort((a, b) => a - b).map((t, i) => ({
+      id: `${p.idPrefix}${i}`.slice(0, 64),
+      timeUs: t,
+      label: "",
+      color: "#ffd60a",
+      kind: "beat" as const,
+    }));
+    seq.markers = [...seq.markers.filter((m) => m.kind !== "beat"), ...beats].sort((a, b) => a.timeUs - b.timeUs);
+  },
+
   "internal/restore": (d, p) => {
     if (p.name !== undefined) d.name = p.name;
     if (p.activeSequenceId !== undefined) d.activeSequenceId = p.activeSequenceId;
@@ -768,6 +796,9 @@ export function describeCommand(command: Command): string {
     "clip/removeKeyframe": "Remove keyframe",
     "clip/clearKeyframes": "Clear keyframes",
     "clip/freeze": "Freeze frame",
+    "marker/add": "Add marker",
+    "marker/remove": "Remove marker",
+    "marker/setBeats": "Beat markers",
     "internal/restore": "Restore",
   };
   return labels[command.type] ?? command.type;

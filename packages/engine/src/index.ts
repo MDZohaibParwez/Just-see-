@@ -13,3 +13,7 @@ export * from "./media/lut";
 export * from "./effects/library";
 export * from "./analysis/color-match";
 export * from "./transitions/library";
+export * from "./analysis/beats";
+export * from "./export/session";
+export * from "./export/gif";
+export * from "./export/zip";

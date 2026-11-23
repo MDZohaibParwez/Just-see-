@@ -138,6 +138,8 @@ export function Editor() {
         s.setZoom(s.pxPerSecond * 1.4);
       } else if (e.key === "-") {
         s.setZoom(s.pxPerSecond / 1.4);
+      } else if (e.key.toLowerCase() === "m") {
+        void import("@/lib/audio-tools").then((m) => m.addMarker());
       } else if (e.key.toLowerCase() === "t") {
         addText();
       } else if (e.key.toLowerCase() === "i") {

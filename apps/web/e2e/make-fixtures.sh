@@ -23,3 +23,7 @@ D=12.1
 [ -f invert.cube ] || printf 'TITLE "Invert"\nLUT_3D_SIZE 2\n1 1 1\n0 1 1\n1 0 1\n0 0 1\n1 1 0\n0 1 0\n1 0 0\n0 0 0\n' > invert.cube
 # green screen clip: green background with a moving white box
 [ -f greenscreen.mp4 ] || $F -f lavfi -i "color=c=0x00ff00:size=720x1280:rate=30,drawbox=x='100+t*40':y=400:w=300:h=300:color=white:t=fill" -t 4 -c:v libx264 -preset veryfast -pix_fmt yuv420p greenscreen.mp4
+# 120 BPM click track, 10 s
+[ -f beat.mp3 ] || $F -f lavfi -i "aevalsrc='0.8*sin(2*PI*900*t)*exp(-60*mod(t-0.25,0.5))*gte(t,0.25)':s=44100:d=10" -c:a libmp3lame -b:a 128k beat.mp3
+# tone, 2 s silence, tone
+[ -f gap.mp3 ] || $F -f lavfi -i "aevalsrc='0.5*sin(2*PI*300*t)*(lt(t,2)+gte(t,4))':s=44100:d=6" -c:a libmp3lame -b:a 128k gap.mp3

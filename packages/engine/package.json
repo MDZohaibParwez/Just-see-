@@ -5,12 +5,21 @@
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
-  "exports": { ".": "./src/index.ts" },
-  "scripts": { "test": "vitest run", "typecheck": "tsc -p ." },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p ."
+  },
   "dependencies": {
     "@just-see/schema": "workspace:*",
     "mp4box": "2.6.0",
-    "mp4-muxer": "5.2.2"
+    "mp4-muxer": "5.2.2",
+    "webm-muxer": "5.1.4"
   },
-  "devDependencies": { "typescript": "5.9.3", "vitest": "3.2.7" }
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  }
 }

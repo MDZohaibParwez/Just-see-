@@ -157,6 +157,21 @@ const en = {
   tr_wipe: "Wipe",
   tr_zoom: "Zoom",
   tr_stylish: "Stylish",
+  beats: "Beats",
+  removeSilence: "Remove silence",
+  marker: "Marker",
+  cutToBeat: "Cut to beat",
+  analyzing: "Analysing audio…",
+  beatsFound: "Beats found",
+  needBeats: "Select a music clip and tap Beats first",
+  noSilence: "No silence found",
+  silenceRemoved: "Silent parts removed",
+  format: "Format",
+  codec: "Codec",
+  presets: "Presets",
+  transparentBg: "Transparent background",
+  gifHint: "GIFs have no sound and get large. Keep them under 15 s.",
+  pngHint: "A ZIP of PNG frames with transparency, for motion graphics.",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -317,6 +332,21 @@ const hi: Dict = {
   tr_wipe: "वाइप",
   tr_zoom: "ज़ूम",
   tr_stylish: "स्टाइलिश",
+  beats: "बीट",
+  removeSilence: "ख़ामोशी हटाएँ",
+  marker: "मार्कर",
+  cutToBeat: "बीट पर काटें",
+  analyzing: "ऑडियो जाँचा जा रहा है…",
+  beatsFound: "बीट मिलीं",
+  needBeats: "पहले संगीत क्लिप चुनकर बीट दबाएँ",
+  noSilence: "कोई ख़ामोशी नहीं मिली",
+  silenceRemoved: "ख़ामोश हिस्से हटा दिए",
+  format: "फ़ॉर्मैट",
+  codec: "कोडेक",
+  presets: "प्रीसेट",
+  transparentBg: "पारदर्शी बैकग्राउंड",
+  gifHint: "GIF में आवाज़ नहीं होती और फ़ाइल बड़ी होती है। 15 सेकंड से कम रखें।",
+  pngHint: "पारदर्शी PNG फ़्रेम की ZIP, मोशन ग्राफ़िक्स के लिए।",
 };
 
 export const dictionaries = { en, hi } as const;

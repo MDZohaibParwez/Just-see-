@@ -66,10 +66,13 @@ export class Compositor {
   private luts = new Map<string, { tex: WebGLTexture; size: number }>();
   private dummyLut: WebGLTexture | null = null;
 
-  constructor(canvas: GLCanvas, opts: { preserveDrawingBuffer?: boolean } = {}) {
+  private transparent: boolean;
+
+  constructor(canvas: GLCanvas, opts: { preserveDrawingBuffer?: boolean; transparent?: boolean } = {}) {
     this.canvas = canvas;
+    this.transparent = opts.transparent ?? false;
     const gl = canvas.getContext("webgl2", {
-      alpha: false,
+      alpha: this.transparent,
       antialias: false,
       premultipliedAlpha: true,
       preserveDrawingBuffer: opts.preserveDrawingBuffer ?? false,
@@ -439,7 +442,8 @@ export class Compositor {
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.target(ACC).fbo);
     gl.viewport(0, 0, w, h);
     const [r, g, bl] = parseColor(plan.background);
-    gl.clearColor(r, g, bl, 1);
+    if (this.transparent) gl.clearColor(0, 0, 0, 0);
+    else gl.clearColor(r, g, bl, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
     for (const layer of plan.layers) {

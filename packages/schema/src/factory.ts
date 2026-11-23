@@ -58,6 +58,7 @@ export function createSequence(opts: {
     fps: opts.fps ?? 30,
     background: { kind: "color", color: "#000000", blur: 0.6, assetId: null },
     tracks: [createTrack("main")],
+    markers: [],
   };
 }
 

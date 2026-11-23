@@ -3,6 +3,7 @@
 import { Icon, type IconName } from "@just-see/ui";
 import { findClip, isMediaClip } from "@just-see/schema";
 import { addText, deleteSelection, duplicateSelection, freezeFrame, splitAtPlayhead } from "@/lib/actions";
+import { addMarker, cutToBeat, markBeats, removeSilence } from "@/lib/audio-tools";
 import { useEditor, useProject, type Panel } from "@/lib/editor-store";
 import { useT, type MessageKey } from "@/lib/i18n";
 
@@ -49,6 +50,8 @@ export function Toolbar({ onImport, onImportMusic }: { onImport: () => void; onI
       tools.push({ id: "crop", icon: "crop", label: "crop", run: open("crop") });
     }
     if (c.kind === "video" && !c.holdFrame) tools.push({ id: "freeze", icon: "freeze", label: "freeze", run: freezeFrame });
+    if (c.kind === "audio") tools.push({ id: "beats", icon: "keyframe", label: "beats", run: () => void markBeats(c.id) });
+    if (c.kind !== "image" && !c.holdFrame) tools.push({ id: "silence", icon: "mute", label: "removeSilence", run: () => void removeSilence(c.id) });
     if (loc.track.type === "main" && loc.index > 0) {
       tools.push({
         id: "transition",
@@ -69,7 +72,11 @@ export function Toolbar({ onImport, onImportMusic }: { onImport: () => void; onI
       { id: "music", icon: "music", label: "music", run: onImportMusic },
       { id: "split", icon: "split", label: "split", run: splitAtPlayhead },
       { id: "canvas", icon: "canvas", label: "canvas", run: open("canvas") },
+      { id: "marker", icon: "keyframe", label: "marker", run: addMarker },
     ];
+    if (project && project.sequences.some((sq) => sq.markers.some((m) => m.kind === "beat"))) {
+      tools.push({ id: "cut-to-beat", icon: "music", label: "cutToBeat", run: () => void cutToBeat() });
+    }
   }
 
   return (

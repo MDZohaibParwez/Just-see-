@@ -269,6 +269,16 @@ export const BackgroundSchema = z.object({
 });
 export type Background = z.infer<typeof BackgroundSchema>;
 
+export const MarkerSchema = z.object({
+  id: IdSchema,
+  timeUs: MicrosSchema,
+  label: z.string().max(200),
+  color: z.string().max(32),
+  /** "beat" markers come from beat detection and are replaced as a set. */
+  kind: z.enum(["user", "beat"]),
+});
+export type Marker = z.infer<typeof MarkerSchema>;
+
 export const SequenceSchema = z.object({
   id: IdSchema,
   name: z.string().max(200),
@@ -278,6 +288,7 @@ export const SequenceSchema = z.object({
   background: BackgroundSchema,
   /** Drawn bottom to top. Exactly one track has type "main". */
   tracks: z.array(TrackSchema),
+  markers: z.array(MarkerSchema).max(5000).default([]),
 });
 export type Sequence = Omit<z.infer<typeof SequenceSchema>, "tracks"> & { tracks: Track[] };
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@just-see/ui";
-import { exportMp4, exportSizes } from "@just-see/engine";
+import { EXPORT_PRESETS, exportProject, exportSizes, type ExportFormat, type MuxVideoCodec } from "@just-see/engine";
 import { formatTimecode, getSequence, sequenceDurationUs } from "@just-see/schema";
 import { useEditor, useProject } from "@/lib/editor-store";
 import { mediaLoader } from "@/lib/media";
@@ -30,6 +30,9 @@ export function ExportPanel() {
   const [size, setSize] = useState("1080p");
   const [fps, setFps] = useState(seq?.fps ?? 30);
   const [quality, setQuality] = useState<"standard" | "high">("standard");
+  const [format, setFormat] = useState<ExportFormat>("mp4");
+  const [codec, setCodec] = useState<MuxVideoCodec>("avc");
+  const [transparent, setTransparent] = useState(true);
   const [state, setState] = useState<State>({ kind: "idle" });
   const abort = useRef<AbortController | null>(null);
 
@@ -52,10 +55,13 @@ export function ExportPanel() {
     const started = performance.now();
     try {
       const base = chosen.width * chosen.height >= 3840 * 2160 ? 40e6 : chosen.width * chosen.height >= 1920 * 1080 ? 12e6 : 6e6;
-      const res = await exportMp4(project, mediaLoader, {
+      const res = await exportProject(project, mediaLoader, {
         width: chosen.width,
         height: chosen.height,
         fps,
+        format,
+        codec,
+        transparent,
         videoBitrate: Math.round(base * (quality === "high" ? 1.8 : 1) * (fps > 30 ? 1.5 : 1)),
         signal: ctrl.signal,
         onProgress: (p) => setState({ kind: "running", phase: p.phase, progress: p.progress }),
@@ -67,7 +73,7 @@ export function ExportPanel() {
         kind: "done",
         url,
         blob: res.blob,
-        name: `${safe}.mp4`,
+        name: `${safe}.${res.extension}`,
         info: `${chosen.width}×${chosen.height} · ${fps} fps · ${res.videoCodec}${res.audioCodec ? ` + ${res.audioCodec}` : ""} · ${(res.blob.size / 1e6).toFixed(1)} MB · ${secs}s`,
       });
     } catch (e) {
@@ -78,7 +84,7 @@ export function ExportPanel() {
 
   const share = async () => {
     if (state.kind !== "done") return;
-    const file = new File([state.blob], state.name, { type: "video/mp4" });
+    const file = new File([state.blob], state.name, { type: state.blob.type });
     try {
       if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: project.name });
     } catch {
@@ -97,6 +103,73 @@ export function ExportPanel() {
       {state.kind === "idle" || state.kind === "error" ? (
         <div className="flex flex-col gap-3 py-2">
           <div>
+            <p className="mb-1 text-xs text-muted">{t("presets")}</p>
+            <div className="no-scrollbar flex gap-2 overflow-x-auto">
+              {EXPORT_PRESETS.map((pr) => (
+                <Chip
+                  key={pr.id}
+                  testId={`preset-${pr.id}`}
+                  onClick={() => {
+                    setSize(pr.size);
+                    setFps(pr.fps);
+                    setFormat(pr.format);
+                    setQuality(pr.quality);
+                    setCodec("avc");
+                  }}
+                >
+                  {pr.label}
+                </Chip>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-1 text-xs text-muted">{t("format")}</p>
+            <div className="flex flex-wrap gap-2">
+              {(["mp4", "webm", "gif", "png-zip"] as ExportFormat[]).map((f) => (
+                <Chip
+                  key={f}
+                  active={format === f}
+                  onClick={() => {
+                    setFormat(f);
+                    if (f === "gif") {
+                      setFps(12);
+                      setSize("480p");
+                    } else if (fps < 24) setFps(30);
+                  }}
+                  testId={`format-${f}`}
+                >
+                  {f === "png-zip" ? "PNG (.zip)" : f.toUpperCase()}
+                </Chip>
+              ))}
+            </div>
+            {format === "gif" && <p className="mt-1 text-xs text-muted">{t("gifHint")}</p>}
+            {format === "png-zip" && (
+              <>
+                <p className="mt-1 text-xs text-muted">{t("pngHint")}</p>
+                <label className="mt-1 flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={transparent} onChange={(e) => setTransparent(e.currentTarget.checked)} />
+                  {t("transparentBg")}
+                </label>
+              </>
+            )}
+          </div>
+          {format === "mp4" && (
+            <div>
+              <p className="mb-1 text-xs text-muted">{t("codec")}</p>
+              <div className="flex flex-wrap gap-2">
+                {([
+                  ["avc", "H.264"],
+                  ["hevc", "H.265"],
+                  ["av1", "AV1"],
+                ] as [MuxVideoCodec, string][]).map(([c, l]) => (
+                  <Chip key={c} active={codec === c} onClick={() => setCodec(c)} testId={`codec-${c}`}>
+                    {l}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+          )}
+          <div>
             <p className="mb-1 text-xs text-muted">{t("resolution")}</p>
             <div className="flex flex-wrap gap-2">
               {sizes.map((s) => (
@@ -110,7 +183,7 @@ export function ExportPanel() {
           <div>
             <p className="mb-1 text-xs text-muted">{t("frameRate")}</p>
             <div className="flex flex-wrap gap-2">
-              {[24, 25, 30, 60].map((f) => (
+              {[10, 12, 15, 24, 25, 30, 60].filter((f) => (format === "gif" ? f <= 15 : f >= 24)).map((f) => (
                 <Chip key={f} active={fps === f} onClick={() => setFps(f)} testId={`export-fps-${f}`}>
                   {f}
                 </Chip>
@@ -161,7 +234,12 @@ export function ExportPanel() {
       ) : (
         <div className="flex flex-col gap-3 py-2" data-testid="export-done">
           <p className="font-semibold">{t("exportDone")}</p>
-          <video src={state.url} controls playsInline className="max-h-56 w-full rounded-xl bg-black" />
+          {state.blob.type.startsWith("video/") ? (
+            <video src={state.url} controls playsInline className="max-h-56 w-full rounded-xl bg-black" />
+          ) : state.blob.type === "image/gif" ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={state.url} alt="" className="max-h-56 w-full rounded-xl bg-black object-contain" />
+          ) : null}
           <p className="text-xs text-muted" data-testid="export-info">
             {state.info}
           </p>
