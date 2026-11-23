@@ -12,6 +12,7 @@ import { planMediaSources, resolveAudio, resolveFrame, type MediaSource } from "
 import { decodeMp4Audio, decodeWithWebAudio, mixSegments, type Pcm } from "../media/audio";
 import { Mp4Demuxer, isMp4Like } from "../media/demux";
 import { VideoFrameReader } from "../media/frame-reader";
+import { parseCubeLut, type Lut3D } from "../media/lut";
 import { defaultVideoBitrate, pickAudioCodec, pickVideoCodec } from "./codecs";
 
 export interface MediaLoader {
@@ -211,6 +212,21 @@ export async function exportMp4(project: Project, loader: MediaLoader, opts: Exp
   const compositor = new Compositor(canvas, { preserveDrawingBuffer: true });
   compositor.resize(width, height);
 
+  // LUT files used by effects, parsed once.
+  const luts = new Map<string, Lut3D>();
+  for (const seqItem of project.sequences)
+    for (const tr of seqItem.tracks)
+      for (const c of tr.clips)
+        for (const fx of c.effects) {
+          if (!fx.assetId || luts.has(fx.assetId)) continue;
+          const a = getAsset(project, fx.assetId);
+          if (a?.kind !== "lut") continue;
+          try {
+            luts.set(a.id, parseCubeLut(await (await blobFor(a)).text()));
+          } catch {
+            // A broken LUT renders as no LUT.
+          }
+        }
   const clipSources = new Map<string, ClipSource>();
   const images = new Map<string, ImageBitmap>();
   let videoErr: Error | null = null;
@@ -269,7 +285,7 @@ export async function exportMp4(project: Project, loader: MediaLoader, opts: Exp
           clipSources.delete(clipId);
         }
       }
-      const provider: SourceProvider = { getImage: (s) => resolved.get(s.clipId) ?? null };
+      const provider: SourceProvider = { getImage: (s) => resolved.get(s.clipId) ?? null, getLut: (id) => luts.get(id) ?? null };
       compositor.render(plan, provider);
       const frame = new VideoFrame(canvas, { timestamp: t, duration: Math.round(1e6 / fps) });
       encoder.encode(frame, { keyFrame: i % Math.max(1, Math.round(fps * 2)) === 0 });

@@ -2,6 +2,7 @@ import { EFFECTS_BY_TYPE, resolveParams, type EffectDef } from "../effects/catal
 import { TRANSITIONS_BY_TYPE } from "../transitions/catalog";
 import { identity, placementMatrix, scaling, uvRotationMatrix, multiply, translation, type Mat3 } from "../layout";
 import type { FramePlan, MediaSource, TextSource, VisualLayer } from "../resolve";
+import type { Lut3D } from "../media/lut";
 import { drawText, textRasterKey, type Canvas2D } from "../text/raster";
 import { BLEND_FS, BLEND_MODES, FULL_VS, QUAD_FS, QUAD_VS, effectFragment, transitionFragment } from "./shaders";
 
@@ -18,6 +19,8 @@ export interface ResolvedImage {
 /** Supplies decoded pixels for media sources. */
 export interface SourceProvider {
   getImage(source: MediaSource): ResolvedImage | null;
+  /** Parsed 3D LUT for a LUT asset, when available. */
+  getLut?(assetId: string): Lut3D | null;
 }
 
 interface Program {
@@ -60,6 +63,8 @@ export class Compositor {
   private textures = new Map<string, CachedTexture>();
   private textCanvases = new Map<string, { canvas: GLCanvas; ctx: Canvas2D; key: string }>();
   private usedThisFrame = new Set<string>();
+  private luts = new Map<string, { tex: WebGLTexture; size: number }>();
+  private dummyLut: WebGLTexture | null = null;
 
   constructor(canvas: GLCanvas, opts: { preserveDrawingBuffer?: boolean } = {}) {
     this.canvas = canvas;
@@ -138,7 +143,7 @@ export class Compositor {
   private effectProgram(def: EffectDef): Program {
     let p = this.effectProgs.get(def.type);
     if (!p) {
-      p = this.compile(FULL_VS, effectFragment(def.params.map((x) => x.key), def.glsl));
+      p = this.compile(FULL_VS, effectFragment(def.params.map((x) => x.key), def.glsl, def.lut === true));
       this.effectProgs.set(def.type, p);
     }
     return p;
@@ -332,12 +337,60 @@ export class Compositor {
         gl.uniform1f(this.loc(prog, "uTime"), layer.localTime);
         gl.uniform1i(this.loc(prog, "uPass"), pass);
         for (const [k, v] of Object.entries(params)) gl.uniform1f(this.loc(prog, `p_${k}`), v);
+        if (def.lut) {
+          const lut = this.lutTexture(fx.assetId ?? null, provider);
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_3D, lut.tex);
+          gl.uniform1i(this.loc(prog, "uLut"), 1);
+          gl.uniform1f(this.loc(prog, "uLutSize"), lut.size);
+          gl.activeTexture(gl.TEXTURE0);
+        }
         gl.bindVertexArray(this.vao);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
         [a, b] = [b, a];
       }
     }
     return a;
+  }
+
+  private lutTexture(assetId: string | null, provider: SourceProvider): { tex: WebGLTexture; size: number } {
+    const gl = this.gl;
+    // 3D uploads from typed arrays must not flip or premultiply.
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    if (assetId) {
+      const hit = this.luts.get(assetId);
+      if (hit) return hit;
+      const lut = provider.getLut?.(assetId);
+      if (lut) {
+        const tex = gl.createTexture();
+        if (tex) {
+          gl.bindTexture(gl.TEXTURE_3D, tex);
+          gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+          gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGB8, lut.size, lut.size, lut.size, 0, gl.RGB, gl.UNSIGNED_BYTE, lut.data);
+          gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+          for (const pname of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, pname, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          const entry = { tex, size: lut.size };
+          this.luts.set(assetId, entry);
+          return entry;
+        }
+      }
+    }
+    if (!this.dummyLut) {
+      const tex = gl.createTexture();
+      if (!tex) throw new Error("Could not create texture");
+      gl.bindTexture(gl.TEXTURE_3D, tex);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGB8, 1, 1, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0]));
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      this.dummyLut = tex;
+    }
+    // Size 1 makes the shader pass colours through unchanged.
+    return { tex: this.dummyLut, size: 1 };
   }
 
   private compositeOnto(accum: number, from: number, opacity: number, w: number, h: number, mode: string = "normal"): void {
@@ -461,6 +514,11 @@ export class Compositor {
     }
   }
 
+  /** Last WebGL error code (0 = none). For diagnostics. */
+  glError(): number {
+    return this.gl.getError();
+  }
+
   /** Read back the current frame as RGBA (top row first). For tests. */
   readPixels(): Uint8Array {
     const gl = this.gl;
@@ -486,6 +544,9 @@ export class Compositor {
     }
     for (const p of [...this.effectProgs.values(), ...this.transitionProgs.values(), this.quadProg]) gl.deleteProgram(p.prog);
     if (this.blendProg) gl.deleteProgram(this.blendProg.prog);
+    for (const l of this.luts.values()) gl.deleteTexture(l.tex);
+    if (this.dummyLut) gl.deleteTexture(this.dummyLut);
+    this.luts.clear();
     this.textures.clear();
     this.targets = [];
     this.effectProgs.clear();

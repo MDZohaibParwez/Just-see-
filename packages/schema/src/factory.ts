@@ -94,11 +94,12 @@ export const DEFAULT_IMAGE_DURATION_US = secondsToUs(3);
 export const DEFAULT_TEXT_DURATION_US = secondsToUs(3);
 
 export function createMediaClip(asset: Asset, opts: { id?: string; startUs?: number; durationUs?: number } = {}): MediaClip {
+  if (asset.kind === "lut") throw new Error("A LUT cannot be placed on the timeline");
   const duration =
     opts.durationUs ?? (asset.kind === "image" ? DEFAULT_IMAGE_DURATION_US : asset.durationUs);
   return {
     id: opts.id ?? createId("c_"),
-    kind: asset.kind,
+    kind: asset.kind as MediaClip["kind"],
     assetId: asset.id,
     startUs: opts.startUs ?? 0,
     durationUs: duration,

@@ -11,7 +11,9 @@ export interface TransitionDef {
   glsl: string;
 }
 
-export const TRANSITIONS: readonly TransitionDef[] = [
+import { LIBRARY_TRANSITIONS } from "./library";
+
+const CORE_TRANSITIONS: readonly TransitionDef[] = [
   {
     type: "crossfade",
     label: "Dissolve",
@@ -133,6 +135,8 @@ export const TRANSITIONS: readonly TransitionDef[] = [
     glsl: `vec4 transition(vec2 uv){ float s = sin(progress * 3.14159); float cells = mix(200.0, 8.0, s); vec2 cell = vec2(1.0 / (cells * aspect()), 1.0 / cells); vec2 q = s > 0.02 ? (floor(uv / cell) + 0.5) * cell : uv; return mix(getFrom(q), getTo(q), smoothstep(0.4, 0.6, progress)); }`,
   },
 ];
+
+export const TRANSITIONS: readonly TransitionDef[] = [...CORE_TRANSITIONS, ...LIBRARY_TRANSITIONS];
 
 export const TRANSITIONS_BY_TYPE: ReadonlyMap<string, TransitionDef> = new Map(TRANSITIONS.map((t) => [t.type, t]));
 

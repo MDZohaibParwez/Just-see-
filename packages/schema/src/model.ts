@@ -42,6 +42,8 @@ export const EffectInstanceSchema = z.object({
   type: z.string().min(1).max(64),
   enabled: z.boolean(),
   params: z.record(z.string(), z.number()),
+  /** Asset used by the effect (e.g. a LUT file). */
+  assetId: IdSchema.nullable().optional(),
 });
 export type EffectInstance = z.infer<typeof EffectInstanceSchema>;
 
@@ -119,7 +121,7 @@ export const LicenseSchema = z.object({
 });
 export type License = z.infer<typeof LicenseSchema>;
 
-export const AssetKindSchema = z.enum(["video", "image", "audio"]);
+export const AssetKindSchema = z.enum(["video", "image", "audio", "lut"]);
 export type AssetKind = z.infer<typeof AssetKindSchema>;
 
 export const AssetSchema = z.object({

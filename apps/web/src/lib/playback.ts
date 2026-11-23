@@ -24,6 +24,7 @@ import {
   type Project,
 } from "@just-see/schema";
 import { assetBlob, assetUrl } from "./media";
+import { getLutSync, setLutLoadedListener } from "./luts";
 
 interface VideoSlot {
   el: HTMLVideoElement;
@@ -77,6 +78,7 @@ export class PreviewPlayer {
     this.onTime = cb.onTime;
     this.onEnded = cb.onEnded;
     this.loop = this.loop.bind(this);
+    setLutLoadedListener(() => (this.dirty = true));
     this.raf = requestAnimationFrame(this.loop);
   }
 
@@ -159,7 +161,11 @@ export class PreviewPlayer {
     if (!this.project) return;
     const plan = resolveFrame(this.project, t);
     this.lastPlan = plan;
-    const provider: SourceProvider = { getImage: (src) => this.imageFor(src.kind, src.clipId, src.assetId) };
+    const project = this.project;
+    const provider: SourceProvider = {
+      getImage: (src) => this.imageFor(src.kind, src.clipId, src.assetId),
+      getLut: (assetId) => getLutSync(getAsset(project, assetId)),
+    };
     try {
       this.compositor.render(plan, provider);
     } catch (e) {

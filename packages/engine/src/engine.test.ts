@@ -208,9 +208,9 @@ describe("layout", () => {
 });
 
 describe("catalogs", () => {
-  it("has 30 effects and 20 transitions with unique ids", () => {
-    expect(EFFECTS.length).toBeGreaterThanOrEqual(30);
-    expect(TRANSITIONS.length).toBeGreaterThanOrEqual(20);
+  it("has 150+ effects and 80+ transitions with unique ids", () => {
+    expect(EFFECTS.length).toBeGreaterThanOrEqual(150);
+    expect(TRANSITIONS.length).toBeGreaterThanOrEqual(80);
     expect(new Set(EFFECTS.map((e) => e.type)).size).toBe(EFFECTS.length);
     expect(new Set(TRANSITIONS.map((t) => t.type)).size).toBe(TRANSITIONS.length);
   });

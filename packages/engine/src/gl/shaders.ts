@@ -57,14 +57,31 @@ vec3 hsv2rgb(vec3 c) {
   vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
   return c.z * clamp(p - 1.0, 0.0, 1.0);
 }
+// Lift / gamma / gain grade with saturation, contrast, fade and split toning.
+vec3 grade(vec3 c, vec3 lift, vec3 gam, vec3 gain, float sat, float con, float fade, vec3 shadowTint, vec3 highTint) {
+  c = clamp(c * gain + lift * (1.0 - c), 0.0, 1.0);
+  c = pow(c, 1.0 / max(gam, vec3(0.05)));
+  c = (c - 0.5) * con + 0.5;
+  float l = luma(c);
+  c = mix(vec3(l), c, sat);
+  c += shadowTint * (1.0 - smoothstep(0.0, 0.55, l)) + highTint * smoothstep(0.45, 1.0, l);
+  c = mix(c, vec3(0.5) + (c - 0.5) * (1.0 - fade), fade > 0.0 ? 1.0 : 0.0);
+  c = c * (1.0 - fade * 0.25) + fade * 0.12;
+  return clamp(c, 0.0, 1.0);
+}
+float sdBox(vec2 p, vec2 b) { vec2 d = abs(p) - b; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0); }
+vec2 rot2(vec2 p, float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c) * p; }
+float fbm(vec2 p) { float v = 0.0; float a = 0.5; for (int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; } return v; }
 `;
 
-export function effectFragment(paramKeys: readonly string[], body: string): string {
+export function effectFragment(paramKeys: readonly string[], body: string, lut = false): string {
   return `#version 300 es
 precision highp float;
+precision highp sampler3D;
 in vec2 vUv;
 out vec4 outColor;
 uniform sampler2D uTex;
+${lut ? "uniform sampler3D uLut;\nuniform float uLutSize;" : ""}
 ${COMMON_GLSL}
 ${paramKeys.map((k) => `uniform float p_${k};`).join("\n")}
 vec4 src(vec2 uv) { return texture(uTex, vec2(uv.x, 1.0 - uv.y)); }

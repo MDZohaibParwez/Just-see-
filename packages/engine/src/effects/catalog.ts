@@ -7,6 +7,8 @@
  * resolution.
  */
 
+import { LIBRARY_EFFECTS } from "./library";
+
 export interface ParamDef {
   key: string;
   label: string;
@@ -16,7 +18,7 @@ export interface ParamDef {
   default: number;
 }
 
-export type EffectCategory = "color" | "blur" | "stylize" | "distort" | "motion" | "retro";
+export type EffectCategory = "look" | "color" | "blur" | "stylize" | "distort" | "motion" | "retro" | "key" | "light";
 
 export interface EffectDef {
   type: string;
@@ -25,6 +27,8 @@ export interface EffectDef {
   params: ParamDef[];
   /** Number of render passes; the shader can read `uPass`. */
   passes?: number;
+  /** Needs a 3D LUT bound as `uLut` (size in `uLutSize`). */
+  lut?: boolean;
   glsl: string;
 }
 
@@ -39,7 +43,7 @@ const p = (key: string, label: string, min: number, max: number, def: number, st
 
 const amount = (def = 0.5, min = 0, max = 1) => p("amount", "Amount", min, max, def);
 
-export const EFFECTS: readonly EffectDef[] = [
+const CORE_EFFECTS: readonly EffectDef[] = [
   // ---------- Colour ----------
   {
     type: "brightness",
@@ -269,6 +273,8 @@ export const EFFECTS: readonly EffectDef[] = [
     glsl: `vec4 effect(vec2 uv){ vec4 c = src(uv); float t = uTime * p_speed; vec2 cnt = vec2(0.5 + 0.6 * sin(t * 0.7), 0.3 + 0.4 * cos(t * 0.5)); float d = length((uv - cnt) * vec2(aspect(), 1.0)); float l = exp(-d * d * 4.0) * p_amount; vec3 col = mix(vec3(1.0, 0.45, 0.15), vec3(1.0, 0.85, 0.4), noise(uv * 3.0 + t)); return vec4(min(c.rgb + col * l * c.a, vec3(1.0)), c.a); }`,
   },
 ];
+
+export const EFFECTS: readonly EffectDef[] = [...CORE_EFFECTS, ...LIBRARY_EFFECTS.map((e) => (e.type === "lut" ? { ...e, lut: true } : e))];
 
 export const EFFECTS_BY_TYPE: ReadonlyMap<string, EffectDef> = new Map(EFFECTS.map((e) => [e.type, e]));
 

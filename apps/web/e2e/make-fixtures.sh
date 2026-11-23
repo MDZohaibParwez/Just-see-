@@ -19,3 +19,7 @@ D=12.1
 [ -f music.mp3 ] || $F -f lavfi -i "sine=frequency=220:sample_rate=44100,volume=0.4" -t 70 -c:a libmp3lame -b:a 128k music.mp3
 # photo
 [ -f photo.png ] || $F -f lavfi -i "testsrc2=size=1200x1600" -frames:v 1 photo.png
+# invert LUT
+[ -f invert.cube ] || printf 'TITLE "Invert"\nLUT_3D_SIZE 2\n1 1 1\n0 1 1\n1 0 1\n0 0 1\n1 1 0\n0 1 0\n1 0 0\n0 0 0\n' > invert.cube
+# green screen clip: green background with a moving white box
+[ -f greenscreen.mp4 ] || $F -f lavfi -i "color=c=0x00ff00:size=720x1280:rate=30,drawbox=x='100+t*40':y=400:w=300:h=300:color=white:t=fill" -t 4 -c:v libx264 -preset veryfast -pix_fmt yuv420p greenscreen.mp4

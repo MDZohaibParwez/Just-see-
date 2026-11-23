@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@just-see/ui";
 import {
   ASPECT_PRESETS,
@@ -20,9 +20,19 @@ import {
   type Transform,
 } from "@just-see/schema";
 import { EFFECTS, EFFECTS_BY_TYPE, TRANSITIONS, animatedTransform, resolveParams, DEFAULT_TRANSITION_US, type EffectCategory } from "@just-see/engine";
-import { KEYFRAME_PROPS, addEffect, animatableCommand, setTransition, setTransitionEverywhere, toggleTransformKeyframe } from "@/lib/actions";
+import {
+  KEYFRAME_PROPS,
+  addEffect,
+  addLutEffect,
+  animatableCommand,
+  localPlayhead,
+  matchColors,
+  setTransition,
+  setTransitionEverywhere,
+  toggleTransformKeyframe,
+} from "@/lib/actions";
 import { useEditor, useProject } from "@/lib/editor-store";
-import { useT } from "@/lib/i18n";
+import { useT, type MessageKey } from "@/lib/i18n";
 import { addVersion, getVersion, listVersions, type VersionRecord } from "@/lib/storage/db";
 import { Chip, ColorRow, CommitSlider, Sheet } from "./controls";
 
@@ -166,15 +176,21 @@ export function VolumePanel() {
 }
 
 // ---------- Effects ----------
-const CATEGORIES: EffectCategory[] = ["color", "blur", "stylize", "distort", "motion", "retro"];
+const CATEGORIES: EffectCategory[] = ["look", "color", "blur", "stylize", "distort", "motion", "retro", "light", "key"];
 
 export function EffectsPanel() {
   const t = useT();
   const loc = useSelectedClip();
-  const [cat, setCat] = useState<EffectCategory>("color");
+  const project = useProject();
+  const [cat, setCat] = useState<EffectCategory>("look");
+  const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
-  if (!loc) return null;
+  const lutInput = useRef<HTMLInputElement>(null);
+  if (!loc || !project) return null;
   const c = loc.clip;
+  const q = query.trim().toLowerCase();
+  const list = EFFECTS.filter((e) => (q ? e.label.toLowerCase().includes(q) || e.type.includes(q) : e.category === cat));
+  const others = loc.track.clips.filter((x) => x.id !== c.id && isMediaClip(x) && x.kind !== "audio");
   return (
     <Sheet title={t("effects")}>
       {c.effects.length > 0 && (
@@ -189,6 +205,7 @@ export function EffectsPanel() {
                 <div className="flex items-center gap-2">
                   <button type="button" className="flex-1 text-left text-sm font-medium" onClick={() => setOpenId(open ? null : fx.id)}>
                     {def.label}
+                    {fx.assetId && <span className="ml-1 text-xs text-muted">· {project.assets.find((x) => x.id === fx.assetId)?.name}</span>}
                   </button>
                   <button
                     type="button"
@@ -219,10 +236,11 @@ export function EffectsPanel() {
                       max={prm.max}
                       step={prm.step}
                       format={(v) => (prm.step >= 1 ? String(Math.round(v)) : v.toFixed(2))}
-                      toCommand={(v) => ({
-                        type: "clip/updateEffect",
-                        payload: { clipId: c.id, effectId: fx.id, params: { [prm.key]: v } },
-                      })}
+                      toCommand={(v) =>
+                        c.keyframes[`fx.${fx.id}.${prm.key}`]?.length
+                          ? { type: "clip/setKeyframe", payload: { clipId: c.id, prop: `fx.${fx.id}.${prm.key}`, t: localPlayhead(c.id) ?? 0, v } }
+                          : { type: "clip/updateEffect", payload: { clipId: c.id, effectId: fx.id, params: { [prm.key]: v } } }
+                      }
                     />
                   ))}
               </li>
@@ -230,21 +248,61 @@ export function EffectsPanel() {
           })}
         </ul>
       )}
-      <div className="no-scrollbar mb-2 flex gap-2 overflow-x-auto">
-        {CATEGORIES.map((k) => (
-          <Chip key={k} active={cat === k} onClick={() => setCat(k)}>
-            {k[0]!.toUpperCase() + k.slice(1)}
+      <input
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.currentTarget.value)}
+        placeholder={t("searchEffects")}
+        aria-label={t("searchEffects")}
+        data-testid="effect-search"
+        className="mb-2 w-full rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm"
+      />
+      {!q && (
+        <div className="no-scrollbar mb-2 flex gap-2 overflow-x-auto">
+          {CATEGORIES.map((k) => (
+            <Chip key={k} active={cat === k} onClick={() => setCat(k)} testId={`fxcat-${k}`}>
+              {t(`fx_${k}` as MessageKey)}
+            </Chip>
+          ))}
+        </div>
+      )}
+      {cat === "color" && !q && (
+        <div className="mb-2 flex flex-wrap gap-2">
+          <Chip onClick={() => lutInput.current?.click()} testId="import-lut">
+            {t("importLut")}
           </Chip>
-        ))}
-      </div>
+          {isMediaClip(c) &&
+            others.slice(0, 6).map((o) => (
+              <Chip key={o.id} onClick={() => void matchColors(c.id, o.id)}>
+                {t("matchTo")} #{loc.track.clips.indexOf(o) + 1}
+              </Chip>
+            ))}
+        </div>
+      )}
+      <input
+        ref={lutInput}
+        type="file"
+        accept=".cube,text/plain"
+        hidden
+        data-testid="lut-input"
+        onChange={(e) => {
+          const file = e.currentTarget.files?.[0];
+          e.currentTarget.value = "";
+          if (file) void addLutEffect(c.id, file);
+        }}
+      />
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-        {EFFECTS.filter((e) => e.category === cat).map((e) => (
+        {list.map((e) => (
           <button
             key={e.type}
             type="button"
             data-testid={`effect-${e.type}`}
             className="flex h-14 items-center justify-center rounded-xl border border-line bg-surface-2 px-1 text-center text-xs active:scale-95"
             onClick={() => {
+              if (e.lut) {
+                lutInput.current?.click();
+                return;
+              }
               const id = addEffect(c.id, e.type);
               if (id) setOpenId(id);
             }}
@@ -253,21 +311,34 @@ export function EffectsPanel() {
           </button>
         ))}
       </div>
+      <p className="mt-2 text-center text-xs text-muted">
+        {EFFECTS.length} {t("effects")}
+      </p>
     </Sheet>
   );
 }
 
 // ---------- Transition ----------
+const TR_CATS = ["basic", "slide", "wipe", "zoom", "stylish"] as const;
+
 export function TransitionPanel() {
   const t = useT();
   const loc = useSelectedClip();
   const [dur, setDur] = useState(DEFAULT_TRANSITION_US);
+  const [cat, setCat] = useState<(typeof TR_CATS)[number]>("basic");
   if (!loc || !isMediaClip(loc.clip)) return null;
   const c = loc.clip;
   const current = c.transitionIn;
   const duration = current?.durationUs ?? dur;
   return (
     <Sheet title={t("transitions")}>
+      <div className="no-scrollbar flex gap-2 overflow-x-auto py-2">
+        {TR_CATS.map((k) => (
+          <Chip key={k} active={cat === k} onClick={() => setCat(k)} testId={`trcat-${k}`}>
+            {t(`tr_${k}` as MessageKey)}
+          </Chip>
+        ))}
+      </div>
       <div className="grid grid-cols-3 gap-2 py-2 sm:grid-cols-4">
         <button
           type="button"
@@ -276,7 +347,7 @@ export function TransitionPanel() {
         >
           {t("none")}
         </button>
-        {TRANSITIONS.map((tr) => (
+        {TRANSITIONS.filter((tr) => tr.category === cat).map((tr) => (
           <button
             key={tr.type}
             type="button"
@@ -312,6 +383,9 @@ export function TransitionPanel() {
           {t("applyToAll")}
         </button>
       )}
+      <p className="mt-2 text-center text-xs text-muted">
+        {TRANSITIONS.length} {t("transitions")}
+      </p>
     </Sheet>
   );
 }

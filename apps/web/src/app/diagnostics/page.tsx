@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Compositor, EFFECTS, TRANSITIONS, pickAudioCodec, pickVideoCodec } from "@just-see/engine";
+import { Compositor, EFFECTS, TRANSITIONS, defaultParams, pickAudioCodec, pickVideoCodec, type FramePlan, type VisualLayer } from "@just-see/engine";
+import { DEFAULT_TRANSFORM, NO_CROP } from "@just-see/schema";
 
 interface Report {
   webgl2: boolean;
@@ -11,6 +12,7 @@ interface Report {
   videoEncoder: string;
   audioEncoder: string;
   shaderErrors: string[];
+  renderErrors: string[];
   effects: number;
   transitions: number;
 }
@@ -22,6 +24,7 @@ export default function Diagnostics() {
     void (async () => {
       const canvas = document.createElement("canvas");
       let shaderErrors: string[] = [];
+      const renderErrors: string[] = [];
       let webgl2 = false;
       try {
         const c = new Compositor(canvas);
@@ -30,6 +33,48 @@ export default function Diagnostics() {
           EFFECTS.map((e) => e.type),
           TRANSITIONS.map((t) => t.type),
         );
+        // Render every effect and transition once and check for GL errors.
+        c.resize(96, 160);
+        const pattern = document.createElement("canvas");
+        pattern.width = 64;
+        pattern.height = 64;
+        const pctx = pattern.getContext("2d");
+        if (pctx) {
+          const g = pctx.createLinearGradient(0, 0, 64, 64);
+          g.addColorStop(0, "#ff3366");
+          g.addColorStop(1, "#33ccff");
+          pctx.fillStyle = g;
+          pctx.fillRect(0, 0, 64, 64);
+        }
+        const layer = (clipId: string, effects: VisualLayer["effects"]): VisualLayer => ({
+          kind: "visual",
+          clipId,
+          trackId: "t",
+          source: { kind: "image", clipId, assetId: "p", sourceTimeUs: 0, width: 64, height: 64, rotation: 0 },
+          transform: { ...DEFAULT_TRANSFORM },
+          crop: NO_CROP,
+          blendMode: "normal",
+          opacity: 1,
+          effects,
+          localTime: 1.3,
+        });
+        const provider = { getImage: () => ({ image: pattern, rotation: 0, version: 1 }) };
+        const base = { timeUs: 0, width: 96, height: 160, background: "#000000" };
+        for (const e of EFFECTS) {
+          const plan: FramePlan = { ...base, layers: [layer("a", [{ id: "e", type: e.type, enabled: true, params: defaultParams(e) }])] };
+          c.render(plan, provider);
+          const err = c.glError();
+          if (err) renderErrors.push(`effect ${e.type}: GL error ${err}`);
+        }
+        for (const tr of TRANSITIONS) {
+          const plan: FramePlan = { ...base, layers: [{ kind: "transition", type: tr.type, progress: 0.5, from: layer("a", []), to: layer("b", []) }] };
+          c.render(plan, provider);
+          const err = c.glError();
+          if (err) renderErrors.push(`transition ${tr.type}: GL error ${err}`);
+        }
+        const blendPlan: FramePlan = { ...base, layers: [layer("a", []), { ...layer("b", []), blendMode: "overlay" }] };
+        c.render(blendPlan, provider);
+        if (c.glError()) renderErrors.push("blend: GL error");
         c.dispose();
       } catch (e) {
         shaderErrors = [(e as Error).message];
@@ -48,6 +93,7 @@ export default function Diagnostics() {
         videoEncoder,
         audioEncoder,
         shaderErrors,
+        renderErrors,
         effects: EFFECTS.length,
         transitions: TRANSITIONS.length,
       });
@@ -63,7 +109,7 @@ export default function Diagnostics() {
       {!report ? (
         <p>Checking…</p>
       ) : (
-        <dl className="grid grid-cols-2 gap-2 text-sm" data-testid="diagnostics" data-shader-errors={report.shaderErrors.length}>
+        <dl className="grid grid-cols-2 gap-2 text-sm" data-testid="diagnostics" data-shader-errors={report.shaderErrors.length} data-render-errors={report.renderErrors.length} data-effects={report.effects} data-transitions={report.transitions}>
           <dt>WebGL2</dt>
           <dd>{report.webgl2 ? "yes" : "no"}</dd>
           <dt>WebCodecs</dt>
@@ -78,6 +124,8 @@ export default function Diagnostics() {
           <dd>
             {report.effects} / {report.transitions}
           </dd>
+          <dt>Render errors</dt>
+          <dd>{report.renderErrors.length === 0 ? "none" : <pre className="whitespace-pre-wrap text-danger">{report.renderErrors.join("\n")}</pre>}</dd>
           <dt>Shader errors</dt>
           <dd>{report.shaderErrors.length === 0 ? "none" : <pre className="whitespace-pre-wrap text-danger">{report.shaderErrors.join("\n")}</pre>}</dd>
         </dl>

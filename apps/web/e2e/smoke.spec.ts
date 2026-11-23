@@ -10,8 +10,14 @@ test("all effect and transition shaders compile", async ({ page }) => {
   await page.goto("/diagnostics/");
   const d = page.getByTestId("diagnostics");
   await expect(d).toBeVisible();
-  await expect(d).toHaveAttribute("data-shader-errors", "0");
-  await expect(d).toContainText("30 / 20");
+  const errors = await d.getAttribute("data-shader-errors");
+  if (errors !== "0") console.log(await d.textContent());
+  expect(errors).toBe("0");
+  const renderErrors = await d.getAttribute("data-render-errors");
+  if (renderErrors !== "0") console.log(await d.textContent());
+  expect(renderErrors).toBe("0");
+  expect(Number(await d.getAttribute("data-effects"))).toBeGreaterThanOrEqual(150);
+  expect(Number(await d.getAttribute("data-transitions"))).toBeGreaterThanOrEqual(80);
 });
 
 test("Hindi UI switch", async ({ page }) => {

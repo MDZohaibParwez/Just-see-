@@ -231,3 +231,54 @@ export function freezeFrame(): void {
     useEditor.getState().select({ kind: "clip", clipId: id });
   }
 }
+
+/** Import a .cube file and add it as a LUT effect on the clip. */
+export async function addLutEffect(clipId: string, file: File): Promise<void> {
+  const s = useEditor.getState();
+  try {
+    const { importLut } = await import("./luts");
+    const asset = await importLut(file);
+    const effect = { id: createId("e_"), type: "lut", enabled: true, params: { amount: 1 }, assetId: asset.id };
+    useEditor.getState().dispatch({
+      type: "batch",
+      payload: { label: "LUT", commands: [{ type: "asset/add", payload: { asset } }, { type: "clip/addEffect", payload: { clipId, effect } }] },
+    });
+  } catch (e) {
+    s.toast(`${tr("importFailed")}: ${(e as Error).message}`, "error");
+  }
+}
+
+/** Match a clip's colours to another clip using thumbnail statistics. */
+export async function matchColors(clipId: string, referenceClipId: string): Promise<void> {
+  const p = committed();
+  if (!p) return;
+  const a = findClip(p, clipId)?.clip;
+  const b = findClip(p, referenceClipId)?.clip;
+  if (!a || !b || !isMediaClip(a) || !isMediaClip(b)) return;
+  const { colorStats, colorMatchParams } = await import("@just-see/engine");
+  const { getThumbnails } = await import("./media");
+  const statsOf = async (assetId: string) => {
+    const asset = p.assets.find((x) => x.id === assetId);
+    if (!asset) return null;
+    const thumbs = await getThumbnails(asset);
+    const th = thumbs[Math.floor(thumbs.length / 2)];
+    if (!th) return null;
+    const img = new Image();
+    img.src = th.url;
+    await img.decode();
+    const c = document.createElement("canvas");
+    c.width = img.naturalWidth;
+    c.height = img.naturalHeight;
+    const ctx = c.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0);
+    return colorStats(ctx.getImageData(0, 0, c.width, c.height).data);
+  };
+  const [ref, target] = await Promise.all([statsOf(b.assetId), statsOf(a.assetId)]);
+  if (!ref || !target) return;
+  const params = colorMatchParams(ref, target);
+  const existing = a.effects.find((e) => e.type === "color-match");
+  if (existing) useEditor.getState().dispatch({ type: "clip/updateEffect", payload: { clipId, effectId: existing.id, params } });
+  else useEditor.getState().dispatch({ type: "clip/addEffect", payload: { clipId, effect: { id: createId("e_"), type: "color-match", enabled: true, params } } });
+  useEditor.getState().toast(tr("colorMatched"));
+}

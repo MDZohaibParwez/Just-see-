@@ -9,3 +9,7 @@ export * from "./media/frame-reader";
 export * from "./media/audio";
 export * from "./export/codecs";
 export * from "./export/exporter";
+export * from "./media/lut";
+export * from "./effects/library";
+export * from "./analysis/color-match";
+export * from "./transitions/library";
