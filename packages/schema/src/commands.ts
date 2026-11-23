@@ -27,6 +27,7 @@ import {
   type TrackType,
 } from "./model";
 import { createTrack } from "./factory";
+import { AudioSessionSchema, type AudioSession } from "./session";
 import { removeKeyframeAt, shiftKeyframes, splitKeyframes, subCurve, upsertKeyframe } from "./keyframes";
 import {
   MIN_CLIP_DURATION_US,
@@ -169,7 +170,14 @@ export const CommandPayloads = {
   "marker/add": z.object({ ...SeqRef, marker: MarkerSchema }),
   "marker/remove": z.object({ ...SeqRef, markerId: IdSchema }),
   "marker/setBeats": z.object({ ...SeqRef, timesUs: z.array(MicrosSchema).max(5000), idPrefix: z.string().min(1).max(40) }),
+  "session/put": z.object({ session: AudioSessionSchema }),
+  "session/delete": z.object({ sessionId: IdSchema }),
+  "asset/update": z.object({
+    assetId: IdSchema,
+    patch: z.object({ storageKey: z.string().max(500).optional(), durationUs: MicrosSchema.optional(), sizeBytes: z.number().int().nonnegative().optional(), name: z.string().max(500).optional() }),
+  }),
   "internal/restore": z.object({
+    audioSessions: z.array(AudioSessionSchema).optional(),
     name: z.string().optional(),
     activeSequenceId: z.string().optional(),
     assets: z.array(AssetSchema).optional(),
@@ -843,7 +851,27 @@ const handlers: { [K in keyof typeof CommandPayloads]: Handler<K> } = {
     seq.markers = [...seq.markers.filter((m) => m.kind !== "beat"), ...beats].sort((a, b) => a.timeUs - b.timeUs);
   },
 
+  "session/put": (d, p) => {
+    const sessions = d.audioSessions ?? [];
+    const i = sessions.findIndex((x) => x.id === p.session.id);
+    const next = structuredClone(p.session) as AudioSession;
+    if (i >= 0) sessions[i] = next;
+    else sessions.push(next);
+    d.audioSessions = sessions;
+  },
+
+  "session/delete": (d, p) => {
+    if (!(d.audioSessions ?? []).some((x) => x.id === p.sessionId)) fail(`Session not found: ${p.sessionId}`);
+    d.audioSessions = d.audioSessions.filter((x) => x.id !== p.sessionId);
+  },
+
+  "asset/update": (d, p) => {
+    const a = d.assets.find((x) => x.id === p.assetId) ?? fail(`Asset not found: ${p.assetId}`);
+    Object.assign(a, Object.fromEntries(Object.entries(p.patch).filter(([, v]) => v !== undefined)));
+  },
+
   "internal/restore": (d, p) => {
+    if (p.audioSessions !== undefined) d.audioSessions = structuredClone(p.audioSessions) as AudioSession[];
     if (p.name !== undefined) d.name = p.name;
     if (p.activeSequenceId !== undefined) d.activeSequenceId = p.activeSequenceId;
     if (p.assets !== undefined) d.assets = structuredClone(p.assets) as Asset[];
@@ -898,6 +926,7 @@ function buildInverse(before: Project, after: Project): Command {
   if (before.name !== after.name) payload.name = before.name;
   if (before.activeSequenceId !== after.activeSequenceId) payload.activeSequenceId = before.activeSequenceId;
   if (JSON.stringify(before.assets) !== JSON.stringify(after.assets)) payload.assets = structuredClone(before.assets);
+  if (JSON.stringify(before.audioSessions ?? []) !== JSON.stringify(after.audioSessions ?? [])) payload.audioSessions = structuredClone(before.audioSessions ?? []);
   const seqs: Record<string, Sequence | null> = {};
   let changed = false;
   for (const s of before.sequences) {
@@ -977,6 +1006,9 @@ export function describeCommand(command: Command): string {
     "clip/clearKeyframes": "Clear keyframes",
     "clip/freeze": "Freeze frame",
     "timeline/rippleDelete": "Cut range",
+    "session/put": "Studio edit",
+    "session/delete": "Delete session",
+    "asset/update": "Update media",
     "marker/add": "Add marker",
     "marker/remove": "Remove marker",
     "marker/setBeats": "Beat markers",

@@ -87,6 +87,7 @@ export function createProject(opts: {
     assets: [],
     sequences: [sequence],
     activeSequenceId: sequence.id,
+    audioSessions: [],
   };
 }
 

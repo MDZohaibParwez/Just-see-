@@ -1,4 +1,9 @@
 import { z } from "zod";
+import { EffectInstanceSchema, IdSchema, MicrosSchema } from "./base";
+import { AudioSessionSchema } from "./session";
+
+export { EffectInstanceSchema, IdSchema, MicrosSchema } from "./base";
+export type { EffectInstance } from "./base";
 
 /**
  * Project document, schema version 1.
@@ -8,9 +13,6 @@ import { z } from "zod";
  */
 
 export const SCHEMA_VERSION = 1 as const;
-
-export const IdSchema = z.string().min(1).max(64);
-export const MicrosSchema = z.number().int().nonnegative();
 
 export const TransformSchema = z.object({
   /** Horizontal offset as a fraction of canvas width. 0 = centred. */
@@ -37,15 +39,7 @@ export const DEFAULT_TRANSFORM: Transform = {
   flipV: false,
 };
 
-export const EffectInstanceSchema = z.object({
-  id: IdSchema,
-  type: z.string().min(1).max(64),
-  enabled: z.boolean(),
-  params: z.record(z.string(), z.number()),
-  /** Asset used by the effect (e.g. a LUT file). */
-  assetId: IdSchema.nullable().optional(),
-});
-export type EffectInstance = z.infer<typeof EffectInstanceSchema>;
+
 
 export const EasingSchema = z.enum(["linear", "ease-in", "ease-out", "ease-in-out", "hold", "bezier"]);
 export type Easing = z.infer<typeof EasingSchema>;
@@ -308,6 +302,8 @@ export const ProjectSchema = z.object({
   assets: z.array(AssetSchema),
   sequences: z.array(SequenceSchema).min(1),
   activeSequenceId: IdSchema,
+  /** Audio studio sessions (Phase 3). */
+  audioSessions: z.array(AudioSessionSchema).max(64).default([]),
 });
 export type Project = Omit<z.infer<typeof ProjectSchema>, "sequences"> & { sequences: Sequence[] };
 
