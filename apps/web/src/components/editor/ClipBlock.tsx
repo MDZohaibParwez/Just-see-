@@ -113,6 +113,18 @@ export const ClipBlock = memo(function ClipBlock({ clip, asset, pps, height, sel
       <div className="pointer-events-none absolute bottom-0.5 right-1 rounded bg-black/45 px-1 text-[10px] leading-4 text-white">
         {formatTimecode(clip.durationUs)}
       </div>
+      {Object.keys(clip.keyframes ?? {}).length > 0 && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-3" aria-hidden>
+          {[...new Set(Object.values(clip.keyframes).flatMap((k) => k.map((kf) => kf.t)))].map((t) => (
+            <span
+              key={t}
+              data-testid="keyframe-marker"
+              className="absolute bottom-0.5 h-2 w-2 -translate-x-1 rotate-45 bg-accent"
+              style={{ left: (t / 1e6) * pps }}
+            />
+          ))}
+        </div>
+      )}
       {selected && (
         <>
           <div

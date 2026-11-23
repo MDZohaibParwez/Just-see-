@@ -1,11 +1,19 @@
 import {
+  NO_CROP,
   clipEndUs,
   getAsset,
+  sampleKeyframes,
   getSequence,
   isMediaClip,
   sequenceDurationUs,
+  sourceOffsetAt,
+  sourceSpanUs,
   sourceTimeAt,
+  type BlendMode,
+  type Crop,
   type EffectInstance,
+  type Keyframe,
+  type Keyframes,
   type MediaClip,
   type Project,
   type Sequence,
@@ -48,6 +56,8 @@ export interface TextSource {
   clipId: string;
   clip: TextClip;
   anim: TextAnimState;
+  /** Clip-local time, for karaoke word highlighting. */
+  localUs: number;
 }
 
 export interface VisualLayer {
@@ -56,6 +66,8 @@ export interface VisualLayer {
   trackId: string;
   source: MediaSource | TextSource;
   transform: Transform;
+  crop: Crop;
+  blendMode: BlendMode;
   /** Final opacity including fades and animations. */
   opacity: number;
   effects: EffectInstance[];
@@ -147,6 +159,40 @@ export function textAnimState(clip: TextClip, localUs: number): TextAnimState {
   return state;
 }
 
+const TRANSFORM_KEYS = ["x", "y", "scale", "rotation", "opacity"] as const;
+
+/** Transform with keyframes applied at clip-local time. */
+export function animatedTransform(base: Transform, kf: Keyframes, local: number): Transform {
+  const out = { ...base };
+  for (const k of TRANSFORM_KEYS) if (kf[k]) out[k] = sampleKeyframes(kf[k], local, base[k]);
+  out.scale = Math.max(0.01, out.scale);
+  out.opacity = Math.min(1, Math.max(0, out.opacity));
+  return out;
+}
+
+export function animatedCrop(base: Crop, kf: Keyframes, local: number): Crop {
+  const c = { ...base };
+  for (const k of ["left", "top", "right", "bottom"] as const) {
+    const key = `crop.${k}`;
+    if (kf[key]) c[k] = Math.min(0.95, Math.max(0, sampleKeyframes(kf[key], local, base[k])));
+  }
+  return c;
+}
+
+/** Enabled effects with keyframed params applied. */
+export function animatedEffects(effects: readonly EffectInstance[], kf: Keyframes, local: number): EffectInstance[] {
+  return effects
+    .filter((e) => e.enabled)
+    .map((e) => {
+      const prefix = `fx.${e.id}.`;
+      const keys = Object.keys(kf).filter((k) => k.startsWith(prefix));
+      if (!keys.length) return e;
+      const params = { ...e.params };
+      for (const k of keys) params[k.slice(prefix.length)] = sampleKeyframes(kf[k], local, params[k.slice(prefix.length)] ?? 0);
+      return { ...e, params };
+    });
+}
+
 function fadeFactor(clip: MediaClip, localUs: number): number {
   let f = 1;
   if (clip.fadeInUs > 0) f *= clamp01(localUs / clip.fadeInUs);
@@ -161,6 +207,7 @@ function mediaLayer(project: Project, clip: MediaClip, trackId: string, t: numbe
   const local = t - clip.startUs;
   const sourceTimeUs =
     clip.kind === "video" ? Math.min(Math.max(0, sourceTimeAt(clip, t)), Math.max(0, asset.durationUs - 1)) : 0;
+  const transform = animatedTransform(clip.transform, clip.keyframes, local);
   return {
     kind: "visual",
     clipId: clip.id,
@@ -174,9 +221,11 @@ function mediaLayer(project: Project, clip: MediaClip, trackId: string, t: numbe
       height: asset.height,
       rotation: asset.rotation,
     },
-    transform: clip.transform,
-    opacity: clip.transform.opacity * fadeFactor(clip, local),
-    effects: clip.effects.filter((e) => e.enabled),
+    transform,
+    crop: animatedCrop(clip.crop ?? NO_CROP, clip.keyframes, local),
+    blendMode: clip.blendMode ?? "normal",
+    opacity: transform.opacity * fadeFactor(clip, local),
+    effects: animatedEffects(clip.effects, clip.keyframes, local),
     localTime: local / 1e6,
   };
 }
@@ -184,15 +233,45 @@ function mediaLayer(project: Project, clip: MediaClip, trackId: string, t: numbe
 function textLayer(clip: TextClip, trackId: string, t: number): VisualLayer {
   const local = t - clip.startUs;
   const anim = textAnimState(clip, local);
+  const transform = animatedTransform(clip.transform, clip.keyframes, local);
+  const animated = transform === clip.transform ? clip : { ...clip, transform };
   return {
     kind: "visual",
     clipId: clip.id,
     trackId,
-    source: { kind: "text", clipId: clip.id, clip, anim },
-    transform: clip.transform,
-    opacity: clip.transform.opacity * anim.opacity,
-    effects: clip.effects.filter((e) => e.enabled),
+    source: { kind: "text", clipId: clip.id, clip: animated, anim, localUs: local },
+    transform,
+    crop: NO_CROP,
+    blendMode: clip.blendMode ?? "normal",
+    opacity: transform.opacity * anim.opacity,
+    effects: animatedEffects(clip.effects, clip.keyframes, local),
     localTime: local / 1e6,
+  };
+}
+
+/** A full-bleed (cover) background layer, optionally blurred. */
+function backgroundLayer(source: MediaSource, seq: Sequence, blur: number, shareClipId?: string): VisualLayer {
+  const fit = Math.min(seq.width / Math.max(1, source.width), seq.height / Math.max(1, source.height));
+  const cover = Math.max(seq.width / Math.max(1, source.width), seq.height / Math.max(1, source.height));
+  return {
+    kind: "visual",
+    clipId: source.clipId,
+    trackId: "background",
+    // Reuse the clip's decoder/element for the blurred copy.
+    source: shareClipId ? { ...source, clipId: shareClipId } : source,
+    transform: { x: 0, y: 0, scale: (cover / fit) * (blur > 0 ? 1.08 : 1), rotation: 0, opacity: 1, flipH: false, flipV: false },
+    crop: NO_CROP,
+    blendMode: "normal",
+    opacity: 1,
+    effects:
+      blur > 0
+        ? [
+            { id: "bg-blur", type: "blur", enabled: true, params: { radius: Math.min(1, 0.4 + blur * 0.6) } },
+            { id: "bg-blur2", type: "blur", enabled: true, params: { radius: Math.min(1, 0.4 + blur * 0.6) } },
+            { id: "bg-dim", type: "brightness", enabled: true, params: { amount: -0.15 } },
+          ]
+        : [],
+    localTime: 0,
   };
 }
 
@@ -204,6 +283,24 @@ function smooth(t: number): number {
 export function resolveFrame(project: Project, t: number, sequenceId?: string): FramePlan {
   const seq: Sequence = getSequence(project, sequenceId);
   const layers: PlanLayer[] = [];
+  const bg = seq.background;
+  if (bg.kind === "image" && bg.assetId) {
+    const a = getAsset(project, bg.assetId);
+    if (a && a.kind === "image") {
+      layers.push(backgroundLayer({ kind: "image", clipId: `bg:${a.id}`, assetId: a.id, sourceTimeUs: 0, width: a.width, height: a.height, rotation: 0 }, seq, 0));
+    }
+  } else if (bg.kind === "blur") {
+    // Blurred, zoomed copy of whatever is on the main track right now.
+    const main = seq.tracks.find((tr) => tr.type === "main");
+    const active = main?.clips.filter((c) => c.startUs <= t && t < clipEndUs(c)) ?? [];
+    const top = active[active.length - 1];
+    if (top && isMediaClip(top)) {
+      const l = mediaLayer(project, top, main!.id, t);
+      if (l && l.source.kind !== "text") {
+        layers.push(backgroundLayer({ ...l.source, clipId: `bg:${top.id}` }, seq, bg.blur, l.source.clipId));
+      }
+    }
+  }
   for (const track of seq.tracks) {
     if (track.hidden || track.type === "audio") continue;
     if (track.type === "main") {
@@ -249,6 +346,13 @@ export interface AudioSegment {
   gain: number;
   fadeInUs: number;
   fadeOutUs: number;
+  /** Clip-local volume keyframes; they replace `gain` when present. */
+  volumeKeyframes?: Keyframe[];
+  reverse?: boolean;
+  /** Total source span the segment consumes. */
+  sourceSpanUs?: number;
+  /** Source offset (from sourceInUs) at a clip-local time; handles curves/reverse. */
+  sourceOffsetAt?: (localUs: number) => number;
 }
 
 /** Every piece of sound in the sequence, ready to schedule or mix. */
@@ -258,7 +362,8 @@ export function resolveAudio(project: Project, sequenceId?: string): AudioSegmen
   for (const track of seq.tracks) {
     if (track.muted) continue;
     track.clips.forEach((clip, i) => {
-      if (!isMediaClip(clip) || clip.kind === "image" || clip.muted || clip.volume <= 0) return;
+      if (!isMediaClip(clip) || clip.kind === "image" || clip.muted || clip.holdFrame) return;
+      if (clip.volume <= 0 && !clip.keyframes.volume) return;
       const asset = getAsset(project, clip.assetId);
       if (!asset || (clip.kind === "video" && !asset.hasAudio)) return;
       let fadeIn = clip.fadeInUs;
@@ -278,6 +383,10 @@ export function resolveAudio(project: Project, sequenceId?: string): AudioSegmen
         gain: clip.volume,
         fadeInUs: fadeIn,
         fadeOutUs: fadeOut,
+        volumeKeyframes: clip.keyframes.volume,
+        reverse: clip.reverse,
+        sourceSpanUs: sourceSpanUs(clip),
+        sourceOffsetAt: clip.speedCurve || clip.reverse ? (u: number) => sourceOffsetAt(clip, u) : undefined,
       });
     });
   }
@@ -288,7 +397,7 @@ export function resolveAudio(project: Project, sequenceId?: string): AudioSegmen
 export function segmentGainAt(seg: AudioSegment, t: number): number {
   const local = t - seg.timelineStartUs;
   if (local < 0 || local > seg.durationUs) return 0;
-  let g = seg.gain;
+  let g = seg.volumeKeyframes ? sampleKeyframes(seg.volumeKeyframes, local, seg.gain) : seg.gain;
   if (seg.fadeInUs > 0) g *= clamp01(local / seg.fadeInUs);
   if (seg.fadeOutUs > 0) g *= clamp01((seg.durationUs - local) / seg.fadeOutUs);
   return g;

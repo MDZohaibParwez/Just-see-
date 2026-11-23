@@ -1,4 +1,4 @@
-import type { Asset, Clip, MediaClip, Project, Sequence, Track } from "./model";
+import type { Asset, Clip, MediaClip, Project, Sequence, SpeedCurve, Track } from "./model";
 import { isMediaClip } from "./model";
 
 /** Shortest clip we allow on a timeline: 1/10 s. */
@@ -47,14 +47,69 @@ export function clipEndUs(clip: Clip): number {
   return clip.startUs + clip.durationUs;
 }
 
+/** Speed multiplier of a curve at position p (0..1). */
+export function curveSpeedAt(curve: SpeedCurve | null | undefined, p: number): number {
+  if (!curve || curve.points.length === 0) return 1;
+  const pts = curve.points;
+  const first = pts[0]!;
+  if (p <= first.p) return first.s;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1]!;
+    const b = pts[i]!;
+    if (p <= b.p) {
+      const f = b.p === a.p ? 1 : (p - a.p) / (b.p - a.p);
+      return a.s + (b.s - a.s) * f;
+    }
+  }
+  return pts[pts.length - 1]!.s;
+}
+
+/** ∫₀ᵖ s(x) dx for a piecewise-linear speed curve. */
+export function curveIntegral(curve: SpeedCurve | null | undefined, p: number): number {
+  if (!curve || curve.points.length === 0) return p;
+  const pts = curve.points;
+  let sum = 0;
+  let prevP = 0;
+  let prevS = curveSpeedAt(curve, 0);
+  const stops = [...pts.map((x) => x.p).filter((x) => x > 0 && x < p), p];
+  for (const q of stops) {
+    const s = curveSpeedAt(curve, q);
+    sum += ((prevS + s) / 2) * (q - prevP);
+    prevP = q;
+    prevS = s;
+  }
+  return sum;
+}
+
+/** Average speed multiplier of a curve over the whole clip. */
+export function curveMean(curve: SpeedCurve | null | undefined): number {
+  return curve ? curveIntegral(curve, 1) : 1;
+}
+
 /** Amount of source media a clip consumes. */
 export function sourceSpanUs(clip: MediaClip): number {
-  return Math.round(clip.durationUs * clip.speed);
+  if (clip.holdFrame) return 0;
+  return Math.round(clip.durationUs * clip.speed * curveMean(clip.speedCurve));
+}
+
+/** Source offset (from sourceInUs, forward in the file) at a clip-local time. */
+export function sourceOffsetAt(clip: MediaClip, localUs: number): number {
+  if (clip.holdFrame) return 0;
+  const d = Math.max(1, clip.durationUs);
+  const u = Math.min(Math.max(localUs, 0), d);
+  const forward = clip.speedCurve ? clip.speed * d * curveIntegral(clip.speedCurve, u / d) : clip.speed * u;
+  return Math.round(clip.reverse ? sourceSpanUs(clip) - forward : forward);
 }
 
 /** Source time for a timeline time inside the clip. */
 export function sourceTimeAt(clip: MediaClip, timelineUs: number): number {
-  return Math.round(clip.sourceInUs + (timelineUs - clip.startUs) * clip.speed);
+  return clip.sourceInUs + sourceOffsetAt(clip, timelineUs - clip.startUs);
+}
+
+/** Instantaneous playback rate at a clip-local time (for preview elements). */
+export function playbackRateAt(clip: MediaClip, localUs: number): number {
+  if (clip.holdFrame) return 0;
+  return clip.speed * curveSpeedAt(clip.speedCurve, localUs / Math.max(1, clip.durationUs));
 }
 
 export function trackEndUs(track: Track): number {
@@ -74,9 +129,9 @@ export function sequenceDurationUs(seq: Sequence): number {
  * Images have no source limit.
  */
 export function maxClipDurationUs(clip: MediaClip, asset: Asset | undefined): number {
-  if (clip.kind === "image" || !asset) return Number.MAX_SAFE_INTEGER;
+  if (clip.kind === "image" || clip.holdFrame || !asset) return Number.MAX_SAFE_INTEGER;
   const remaining = Math.max(0, asset.durationUs - clip.sourceInUs);
-  return Math.floor(remaining / clip.speed);
+  return Math.floor(remaining / (clip.speed * curveMean(clip.speedCurve)));
 }
 
 /** Largest transition allowed between two neighbouring clips. */

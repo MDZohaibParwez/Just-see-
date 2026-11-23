@@ -86,3 +86,58 @@ vec4 getTo(vec2 uv) { return texture(uTo, vec2(uv.x, 1.0 - uv.y)); }
 ${body}
 void main() { outColor = transition(vec2(vUv.x, 1.0 - vUv.y)); }`;
 }
+
+export const BLEND_MODES = [
+  "normal",
+  "multiply",
+  "screen",
+  "overlay",
+  "darken",
+  "lighten",
+  "add",
+  "difference",
+  "soft-light",
+  "hard-light",
+  "color-dodge",
+  "color-burn",
+] as const;
+
+/** Separable blend modes (W3C compositing spec), premultiplied in and out. */
+export const BLEND_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uBase;
+uniform sampler2D uTop;
+uniform float uOpacity;
+uniform int uMode;
+out vec4 outColor;
+float softLight(float b, float s) {
+  if (s <= 0.5) return b - (1.0 - 2.0 * s) * b * (1.0 - b);
+  float d = b <= 0.25 ? ((16.0 * b - 12.0) * b + 4.0) * b : sqrt(b);
+  return b + (2.0 * s - 1.0) * (d - b);
+}
+float hardLight(float b, float s) { return s <= 0.5 ? b * 2.0 * s : 1.0 - (1.0 - b) * (1.0 - (2.0 * s - 1.0)); }
+float dodge(float b, float s) { return b == 0.0 ? 0.0 : (s >= 1.0 ? 1.0 : min(1.0, b / (1.0 - s))); }
+float burn(float b, float s) { return b >= 1.0 ? 1.0 : (s <= 0.0 ? 0.0 : 1.0 - min(1.0, (1.0 - b) / s)); }
+vec3 blendFn(vec3 b, vec3 s) {
+  if (uMode == 1) return b * s;
+  if (uMode == 2) return b + s - b * s;
+  if (uMode == 3) return vec3(hardLight(s.r, b.r), hardLight(s.g, b.g), hardLight(s.b, b.b));
+  if (uMode == 4) return min(b, s);
+  if (uMode == 5) return max(b, s);
+  if (uMode == 6) return min(vec3(1.0), b + s);
+  if (uMode == 7) return abs(b - s);
+  if (uMode == 8) return vec3(softLight(b.r, s.r), softLight(b.g, s.g), softLight(b.b, s.b));
+  if (uMode == 9) return vec3(hardLight(b.r, s.r), hardLight(b.g, s.g), hardLight(b.b, s.b));
+  if (uMode == 10) return vec3(dodge(b.r, s.r), dodge(b.g, s.g), dodge(b.b, s.b));
+  if (uMode == 11) return vec3(burn(b.r, s.r), burn(b.g, s.g), burn(b.b, s.b));
+  return s;
+}
+void main() {
+  vec4 b = texture(uBase, vUv);
+  vec4 s = texture(uTop, vUv) * uOpacity;
+  vec3 cb = b.a > 0.0001 ? b.rgb / b.a : vec3(0.0);
+  vec3 cs = s.a > 0.0001 ? s.rgb / s.a : vec3(0.0);
+  vec3 mixed = (1.0 - b.a) * cs + b.a * blendFn(cb, cs);
+  outColor = vec4(s.a * mixed + (1.0 - s.a) * b.rgb, s.a + b.a * (1.0 - s.a));
+}`;

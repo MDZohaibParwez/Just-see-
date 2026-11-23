@@ -2,6 +2,10 @@ import { z } from "zod";
 import {
   AssetSchema,
   BackgroundSchema,
+  BlendModeSchema,
+  CropSchema,
+  EasingSchema,
+  SpeedCurveSchema,
   ClipSchema,
   EffectInstanceSchema,
   IdSchema,
@@ -22,6 +26,7 @@ import {
   type TrackType,
 } from "./model";
 import { createTrack } from "./factory";
+import { removeKeyframeAt, shiftKeyframes, splitKeyframes, subCurve, upsertKeyframe } from "./keyframes";
 import {
   MIN_CLIP_DURATION_US,
   clipEndUs,
@@ -34,7 +39,9 @@ import {
   normalizeMainTrack,
   overlapsOnTrack,
   sortTrack,
+  sourceOffsetAt,
   sourceSpanUs,
+  curveSpeedAt,
 } from "./timeline";
 
 /**
@@ -99,7 +106,33 @@ export const CommandPayloads = {
       animationOut: TextAnimationSchema.optional(),
       animationDurationUs: MicrosSchema.optional(),
       durationUs: MicrosSchema.optional(),
+      crop: CropSchema.partial().optional(),
+      blendMode: BlendModeSchema.optional(),
+      reverse: z.boolean().optional(),
+      words: z.array(z.object({ text: z.string().max(200), startUs: MicrosSchema, endUs: MicrosSchema })).max(2000).optional(),
     }),
+  }),
+  "clip/setSpeedCurve": z.object({ clipId: IdSchema, curve: SpeedCurveSchema.nullable() }),
+  "clip/setKeyframe": z.object({
+    clipId: IdSchema,
+    prop: z.string().min(1).max(120),
+    /** Clip-local time in µs. */
+    t: MicrosSchema,
+    v: z.number(),
+    ease: EasingSchema.optional(),
+    bezier: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional(),
+  }),
+  "clip/removeKeyframe": z.object({ clipId: IdSchema, prop: z.string().min(1).max(120), t: MicrosSchema }),
+  "clip/clearKeyframes": z.object({ clipId: IdSchema, prop: z.string().max(120).optional() }),
+  "clip/freeze": z.object({
+    clipId: IdSchema,
+    /** Timeline time of the frame to freeze. */
+    atUs: MicrosSchema,
+    /** Id of the still clip that is inserted. */
+    newClipId: IdSchema,
+    /** Id of the part after the freeze (when the freeze is inside the clip). */
+    tailClipId: IdSchema,
+    durationUs: MicrosSchema,
   }),
   "clip/setSpeed": z.object({ clipId: IdSchema, speed: z.number().min(0.1).max(100) }),
   "clip/setTransition": z.object({ clipId: IdSchema, transition: TransitionSchema.nullable() }),
@@ -210,6 +243,56 @@ function clampMediaClip(project: Project, clip: Clip): void {
   clip.fadeOutUs = Math.min(clip.fadeOutUs, half);
 }
 
+/**
+ * Cut a clip at a clip-local offset. Mutates `clip` into the left part and
+ * returns the right part. Handles speed curves, reverse and keyframes.
+ */
+function splitClipAt(clip: Clip, offset: number, newId: string): Clip {
+  const right = structuredClone(clip);
+  right.id = newId;
+  right.startUs = clip.startUs + offset;
+  right.durationUs = clip.durationUs - offset;
+  const [kl, kr] = splitKeyframes(clip.keyframes, offset);
+  right.keyframes = kr;
+  if (isMediaClip(right) && isMediaClip(clip)) {
+    const d = clip.durationUs;
+    const pSplit = offset / d;
+    const forward = { ...clip, reverse: false };
+    const fwdAtSplit = sourceOffsetAt(forward, offset);
+    const span = sourceSpanUs(clip);
+    if (!clip.holdFrame) {
+      if (clip.reverse) {
+        // Left part shows the end of the source range, right part the start.
+        right.sourceInUs = clip.sourceInUs;
+        clip.sourceInUs = clip.sourceInUs + Math.max(0, span - fwdAtSplit);
+      } else {
+        right.sourceInUs = clip.sourceInUs + fwdAtSplit;
+      }
+    }
+    const curve = clip.speedCurve;
+    clip.speedCurve = subCurve(curve, 0, pSplit, (q) => curveSpeedAt(curve, q));
+    right.speedCurve = subCurve(curve, pSplit, 1, (q) => curveSpeedAt(curve, q));
+    right.transitionIn = null;
+    right.fadeInUs = 0;
+    clip.fadeOutUs = 0;
+  }
+  if (isTextClip(right) && isTextClip(clip)) {
+    right.words = clip.words.filter((w) => w.endUs > offset).map((w) => ({ ...w, startUs: Math.max(0, w.startUs - offset), endUs: w.endUs - offset }));
+    clip.words = clip.words.filter((w) => w.startUs < offset).map((w) => ({ ...w, endUs: Math.min(w.endUs, offset) }));
+  }
+  clip.durationUs = offset;
+  clip.keyframes = kl;
+  for (const e of right.effects) e.id = `${e.id}_${newId}`.slice(0, 64);
+  // Effect ids changed on the right part: rename their keyframe keys too.
+  const renamed: typeof right.keyframes = {};
+  for (const [k, v] of Object.entries(right.keyframes)) {
+    const m = /^fx\.([^.]+)\.(.+)$/.exec(k);
+    renamed[m ? `fx.${`${m[1]}_${newId}`.slice(0, 64)}.${m[2]}` : k] = v;
+  }
+  right.keyframes = renamed;
+  return right;
+}
+
 function dropIfEmpty(seq: Sequence, track: Track): void {
   if (track.type !== "main" && track.clips.length === 0) seq.tracks = seq.tracks.filter((t) => t !== track);
 }
@@ -307,37 +390,37 @@ const handlers: { [K in keyof typeof CommandPayloads]: Handler<K> } = {
 
   "clip/split": (d, p) => {
     const loc = requireClip(d, p.clipId);
-    const clip = loc.clip;
     if (findClip(d, p.newClipId)) fail(`Clip id already exists: ${p.newClipId}`);
-    const offset = p.atUs - clip.startUs;
-    if (offset < MIN_CLIP_DURATION_US || clip.durationUs - offset < MIN_CLIP_DURATION_US) {
+    const offset = p.atUs - loc.clip.startUs;
+    if (offset < MIN_CLIP_DURATION_US || loc.clip.durationUs - offset < MIN_CLIP_DURATION_US) {
       fail("Split point is too close to the clip edge");
     }
-    const right = structuredClone(clip);
-    right.id = p.newClipId;
-    right.startUs = p.atUs;
-    right.durationUs = clip.durationUs - offset;
-    clip.durationUs = offset;
-    if (isMediaClip(right) && isMediaClip(clip)) {
-      right.sourceInUs = clip.sourceInUs + Math.round(offset * clip.speed);
-      right.transitionIn = null;
-      right.fadeInUs = 0;
-      clip.fadeOutUs = 0;
-    }
-    for (const e of right.effects) e.id = `${e.id}_${p.newClipId}`.slice(0, 64);
+    const right = splitClipAt(loc.clip, offset, p.newClipId);
     loc.track.clips.splice(loc.index + 1, 0, right);
   },
 
   "clip/trim": (d, p) => {
     const loc = requireClip(d, p.clipId);
     const clip = loc.clip;
+    const oldD = clip.durationUs;
     if (p.edge === "end") {
       clip.durationUs = p.timeUs - clip.startUs;
+      if (isMediaClip(clip) && clip.reverse && !clip.holdFrame) {
+        // A reversed clip ends on the earliest source frame: move the in-point.
+        const ext = clip.durationUs - oldD;
+        const shift = Math.round(ext * clip.speed);
+        if (shift > clip.sourceInUs) clip.durationUs = oldD + Math.floor(clip.sourceInUs / clip.speed);
+        clip.sourceInUs = Math.max(0, clip.sourceInUs - Math.round((clip.durationUs - oldD) * clip.speed));
+      }
       clampMediaClip(d, clip);
       if (loc.track.type !== "main") {
         // Do not run into the next clip.
         const next = loc.track.clips.find((c) => c.id !== clip.id && c.startUs >= clip.startUs);
         if (next) clip.durationUs = Math.min(clip.durationUs, next.startUs - clip.startUs);
+      }
+      if (isMediaClip(clip) && clip.speedCurve && clip.durationUs < oldD) {
+        const curve = clip.speedCurve;
+        clip.speedCurve = subCurve(curve, 0, clip.durationUs / oldD, (q) => curveSpeedAt(curve, q));
       }
       return;
     }
@@ -345,17 +428,30 @@ const handlers: { [K in keyof typeof CommandPayloads]: Handler<K> } = {
     let delta = p.timeUs - clip.startUs;
     const end = clipEndUs(clip);
     delta = Math.min(delta, clip.durationUs - MIN_CLIP_DURATION_US);
-    if (isMediaClip(clip) && clip.kind !== "image") {
-      // Cannot extend before the start of the source.
-      delta = Math.max(delta, -Math.floor(clip.sourceInUs / clip.speed));
+    if (isMediaClip(clip) && clip.kind !== "image" && !clip.holdFrame) {
+      // Cannot extend before the start of the source (reverse clips extend from the end).
+      delta = clip.reverse ? Math.max(delta, 0) : Math.max(delta, -Math.floor(clip.sourceInUs / clip.speed));
     }
     if (loc.track.type !== "main") {
       delta = Math.max(delta, -clip.startUs);
       const prev = [...loc.track.clips].reverse().find((c) => c.id !== clip.id && clipEndUs(c) <= clip.startUs);
       if (prev) delta = Math.max(delta, clipEndUs(prev) - clip.startUs);
     }
-    if (isMediaClip(clip) && clip.kind !== "image") {
-      clip.sourceInUs = Math.max(0, clip.sourceInUs + Math.round(delta * clip.speed));
+    if (isMediaClip(clip) && clip.kind !== "image" && !clip.holdFrame && !clip.reverse) {
+      // Move the in-point by the source time the trimmed part covered.
+      const moved = delta >= 0 ? sourceOffsetAt(clip, delta) : Math.round(delta * clip.speed);
+      clip.sourceInUs = Math.max(0, clip.sourceInUs + moved);
+    }
+    clip.keyframes = shiftKeyframes(clip.keyframes, delta);
+    if (isMediaClip(clip) && clip.speedCurve && delta > 0) {
+      const curve = clip.speedCurve;
+      clip.speedCurve = subCurve(curve, delta / oldD, 1, (q) => curveSpeedAt(curve, q));
+    }
+    if (isTextClip(clip)) {
+      clip.words = clip.words
+        .map((w) => ({ ...w, startUs: w.startUs - delta, endUs: w.endUs - delta }))
+        .filter((w) => w.endUs > 0)
+        .map((w) => ({ ...w, startUs: Math.max(0, w.startUs) }));
     }
     if (loc.track.type === "main") {
       clip.durationUs = clip.durationUs - delta;
@@ -393,7 +489,13 @@ const handlers: { [K in keyof typeof CommandPayloads]: Handler<K> } = {
     const patch = p.patch;
     if (patch.transform) clip.transform = { ...clip.transform, ...patch.transform };
     if (patch.durationUs !== undefined) clip.durationUs = patch.durationUs;
+    if (patch.blendMode !== undefined) clip.blendMode = patch.blendMode;
     if (isMediaClip(clip)) {
+      if (patch.crop) clip.crop = { ...clip.crop, ...patch.crop };
+      if (patch.reverse !== undefined) {
+        if (clip.kind === "image") fail("Photos cannot be reversed");
+        clip.reverse = patch.reverse;
+      }
       if (patch.volume !== undefined) clip.volume = patch.volume;
       if (patch.muted !== undefined) clip.muted = patch.muted;
       if (patch.fadeInUs !== undefined) clip.fadeInUs = patch.fadeInUs;
@@ -405,6 +507,7 @@ const handlers: { [K in keyof typeof CommandPayloads]: Handler<K> } = {
       if (patch.animationIn !== undefined) clip.animationIn = patch.animationIn;
       if (patch.animationOut !== undefined) clip.animationOut = patch.animationOut;
       if (patch.animationDurationUs !== undefined) clip.animationDurationUs = patch.animationDurationUs;
+      if (patch.words !== undefined) clip.words = patch.words;
     }
     clampMediaClip(d, clip);
   },
@@ -412,9 +515,11 @@ const handlers: { [K in keyof typeof CommandPayloads]: Handler<K> } = {
   "clip/setSpeed": (d, p) => {
     const { clip } = requireClip(d, p.clipId);
     if (!isMediaClip(clip) || clip.kind === "image") fail("Only video and audio clips have speed");
+    if (clip.holdFrame) fail("A freeze frame has no speed");
     const span = sourceSpanUs(clip);
+    const mean = span / Math.max(1, clip.durationUs * clip.speed);
     clip.speed = p.speed;
-    clip.durationUs = Math.round(span / p.speed);
+    clip.durationUs = Math.round(span / (p.speed * (mean || 1)));
     clampMediaClip(d, clip);
   },
 
@@ -460,6 +565,83 @@ const handlers: { [K in keyof typeof CommandPayloads]: Handler<K> } = {
     }
     copy.startUs = clipEndUs(loc.clip);
     placeOnFreeTrack(loc.sequence, loc.track, copy, p.newTrackId);
+  },
+
+  "clip/setSpeedCurve": (d, p) => {
+    const { clip } = requireClip(d, p.clipId);
+    if (!isMediaClip(clip) || clip.kind === "image" || clip.holdFrame) fail("Only video and audio clips have speed");
+    const span = sourceSpanUs(clip);
+    const curve = p.curve ? { preset: p.curve.preset, points: [...p.curve.points].sort((a, b) => a.p - b.p) } : null;
+    clip.speedCurve = curve;
+    clip.durationUs = Math.round(span / Math.max(0.01, sourceSpanUs({ ...clip, durationUs: 1_000_000 }) / 1_000_000));
+    clampMediaClip(d, clip);
+  },
+
+  "clip/setKeyframe": (d, p) => {
+    const { clip } = requireClip(d, p.clipId);
+    if (p.t > clip.durationUs) fail("Keyframe is outside the clip");
+    if (p.prop.startsWith("fx.")) {
+      const effectId = p.prop.split(".")[1];
+      if (!clip.effects.some((e) => e.id === effectId)) fail(`Effect not found: ${effectId ?? ""}`);
+    }
+    clip.keyframes = { ...clip.keyframes, [p.prop]: upsertKeyframe(clip.keyframes[p.prop], { t: p.t, v: p.v, ease: p.ease ?? "ease-in-out", bezier: p.bezier }) };
+  },
+
+  "clip/removeKeyframe": (d, p) => {
+    const { clip } = requireClip(d, p.clipId);
+    const next = removeKeyframeAt(clip.keyframes[p.prop], p.t);
+    const all = { ...clip.keyframes };
+    if (next.length) all[p.prop] = next;
+    else delete all[p.prop];
+    clip.keyframes = all;
+  },
+
+  "clip/clearKeyframes": (d, p) => {
+    const { clip } = requireClip(d, p.clipId);
+    if (p.prop === undefined) clip.keyframes = {};
+    else {
+      const all = { ...clip.keyframes };
+      delete all[p.prop];
+      clip.keyframes = all;
+    }
+  },
+
+  "clip/freeze": (d, p) => {
+    const loc = requireClip(d, p.clipId);
+    const clip = loc.clip;
+    if (!isMediaClip(clip) || clip.kind !== "video") fail("Freeze frame needs a video clip");
+    for (const id of [p.newClipId, p.tailClipId]) if (findClip(d, id)) fail(`Clip id already exists: ${id}`);
+    const offset = Math.min(Math.max(0, p.atUs - clip.startUs), clip.durationUs);
+    const frameSource = clip.sourceInUs + sourceOffsetAt(clip, offset);
+    const still = structuredClone(clip);
+    still.id = p.newClipId;
+    still.holdFrame = true;
+    still.reverse = false;
+    still.speedCurve = null;
+    still.sourceInUs = frameSource;
+    still.durationUs = Math.max(MIN_CLIP_DURATION_US, p.durationUs);
+    still.transitionIn = null;
+    still.fadeInUs = 0;
+    still.fadeOutUs = 0;
+    still.muted = true;
+    still.keyframes = {};
+    still.effects.forEach((e, i) => (e.id = `${p.newClipId}_e${i}`.slice(0, 64)));
+    let insertAt = loc.index + 1;
+    if (offset > MIN_CLIP_DURATION_US && clip.durationUs - offset > MIN_CLIP_DURATION_US) {
+      const tail = splitClipAt(clip, offset, p.tailClipId);
+      loc.track.clips.splice(loc.index + 1, 0, tail);
+    } else if (offset <= MIN_CLIP_DURATION_US) {
+      insertAt = loc.index;
+    }
+    if (loc.track.type === "main") {
+      loc.track.clips.splice(insertAt, 0, still);
+    } else {
+      still.startUs = clip.startUs + (insertAt === loc.index ? 0 : clip.durationUs);
+      // Push later clips on this track to make room.
+      for (const c of loc.track.clips) if (c.startUs >= still.startUs) c.startUs += still.durationUs;
+      loc.track.clips.push(still);
+      sortTrack(loc.track);
+    }
   },
 
   "internal/restore": (d, p) => {
@@ -581,6 +763,11 @@ export function describeCommand(command: Command): string {
     "clip/updateEffect": "Edit effect",
     "clip/removeEffect": "Remove effect",
     "clip/duplicate": "Duplicate",
+    "clip/setSpeedCurve": "Speed ramp",
+    "clip/setKeyframe": "Keyframe",
+    "clip/removeKeyframe": "Remove keyframe",
+    "clip/clearKeyframes": "Clear keyframes",
+    "clip/freeze": "Freeze frame",
     "internal/restore": "Restore",
   };
   return labels[command.type] ?? command.type;

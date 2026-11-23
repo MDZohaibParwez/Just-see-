@@ -10,6 +10,7 @@ import {
   AdjustPanel,
   AnimationPanel,
   CanvasPanel,
+  CropPanel,
   EffectsPanel,
   HistoryPanel,
   SpeedPanel,
@@ -55,6 +56,8 @@ function ActivePanel() {
       return <AnimationPanel />;
     case "adjust":
       return <AdjustPanel />;
+    case "crop":
+      return <CropPanel />;
     case "canvas":
       return <CanvasPanel />;
     case "export":

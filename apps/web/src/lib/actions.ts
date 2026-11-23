@@ -10,6 +10,7 @@ import {
   getMainTrack,
   getSequence,
   isMediaClip,
+  sampleKeyframes,
   type Command,
 } from "@just-see/schema";
 import { DEFAULT_TRANSITION_US, EFFECTS_BY_TYPE, defaultParams } from "@just-see/engine";
@@ -167,4 +168,66 @@ export function stepFrame(dir: 1 | -1): void {
   const fps = getSequence(p).fps;
   s.setPlaying(false);
   s.setPlayhead(s.playheadUs + (dir * 1e6) / fps);
+}
+
+/** Clip-local playhead time, clamped inside the clip. */
+export function localPlayhead(clipId: string): number | null {
+  const s = useEditor.getState();
+  const p = currentProject(s);
+  const loc = p ? findClip(p, clipId) : undefined;
+  if (!loc) return null;
+  return Math.round(Math.min(Math.max(0, s.playheadUs - loc.clip.startUs), loc.clip.durationUs));
+}
+
+export const KEYFRAME_PROPS = ["x", "y", "scale", "rotation", "opacity"] as const;
+
+/**
+ * Command to change an animatable property: if the property already has
+ * keyframes, set one at the playhead; otherwise change the static value.
+ */
+export function animatableCommand(clipId: string, prop: string, value: number): Command | null {
+  const p = committed();
+  const loc = p ? findClip(p, clipId) : undefined;
+  if (!loc) return null;
+  const t = localPlayhead(clipId) ?? 0;
+  if (loc.clip.keyframes[prop]?.length) return { type: "clip/setKeyframe", payload: { clipId, prop, t, v: value } };
+  if (prop === "volume") return { type: "clip/update", payload: { clipId, patch: { volume: value } } };
+  if (prop.startsWith("crop.")) return { type: "clip/update", payload: { clipId, patch: { crop: { [prop.slice(5)]: value } } } };
+  return { type: "clip/update", payload: { clipId, patch: { transform: { [prop]: value } } } };
+}
+
+/** Toggle a keyframe for all transform properties at the playhead. */
+export function toggleTransformKeyframe(clipId: string): void {
+  const p = committed();
+  const loc = p ? findClip(p, clipId) : undefined;
+  const t = localPlayhead(clipId);
+  if (!loc || t === null) return;
+  const has = KEYFRAME_PROPS.some((k) => loc.clip.keyframes[k]?.some((kf) => Math.abs(kf.t - t) <= 1000));
+  const commands: Command[] = KEYFRAME_PROPS.map((prop) =>
+    has
+      ? ({ type: "clip/removeKeyframe", payload: { clipId, prop, t } } as Command)
+      : ({ type: "clip/setKeyframe", payload: { clipId, prop, t, v: currentValue(loc.clip, prop, t) } } as Command),
+  );
+  useEditor.getState().dispatch({ type: "batch", payload: { label: has ? "Remove keyframe" : "Keyframe", commands } });
+  haptic(10);
+}
+
+function currentValue(clip: { keyframes: Record<string, { t: number; v: number; ease: "linear" | "ease-in" | "ease-out" | "ease-in-out" | "hold" | "bezier" }[]>; transform: Record<string, unknown> }, prop: string, t: number): number {
+  const base = Number(clip.transform[prop] ?? 0);
+  return sampleKeyframes(clip.keyframes[prop], t, base);
+}
+
+/** Freeze the frame under the playhead for 3 s. */
+export function freezeFrame(): void {
+  const s = useEditor.getState();
+  if (s.selection?.kind !== "clip") return;
+  const id = createId("c_");
+  if (
+    s.dispatch({
+      type: "clip/freeze",
+      payload: { clipId: s.selection.clipId, atUs: s.playheadUs, newClipId: id, tailClipId: createId("c_"), durationUs: 3_000_000 },
+    })
+  ) {
+    useEditor.getState().select({ kind: "clip", clipId: id });
+  }
 }

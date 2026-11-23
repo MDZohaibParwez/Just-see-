@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { measureTextBox, placedCorners, placementMatrix } from "@just-see/engine";
-import { findClip, getAsset, getSequence, isMediaClip, isTextClip, type Clip, type Project, type Transform } from "@just-see/schema";
+import { animatedTransform, measureTextBox, placedCorners, placementMatrix } from "@just-see/engine";
+import { findClip, getAsset, getSequence, isMediaClip, isTextClip, type Clip, type Command, type Project, type Transform } from "@just-see/schema";
+import { animatableCommand } from "@/lib/actions";
 import { currentProject, useEditor, useProject } from "@/lib/editor-store";
 import { PreviewPlayer } from "@/lib/playback";
 import { useT } from "@/lib/i18n";
@@ -13,8 +14,9 @@ function measurer(): CanvasRenderingContext2D | null {
   return measureCtx;
 }
 
-/** Corners of a clip on the canvas, in canvas pixels. */
-function clipCorners(project: Project, clip: Clip, w: number, h: number): [number, number][] | null {
+/** Corners of a clip on the canvas, in canvas pixels, at timeline time t. */
+function clipCorners(project: Project, clip0: Clip, w: number, h: number, t = clip0.startUs): [number, number][] | null {
+  const clip = { ...clip0, transform: animatedTransform(clip0.transform, clip0.keyframes, t - clip0.startUs) } as Clip;
   if (isTextClip(clip)) {
     const ctx = measurer();
     if (!ctx) return null;
@@ -31,7 +33,8 @@ function clipCorners(project: Project, clip: Clip, w: number, h: number): [numbe
   if (!isMediaClip(clip) || clip.kind === "audio") return null;
   const asset = getAsset(project, clip.assetId);
   if (!asset) return null;
-  return placedCorners(placementMatrix(clip.transform, asset.width, asset.height, w, h));
+  const c = clip.crop;
+  return placedCorners(placementMatrix(clip.transform, asset.width * (1 - c.left - c.right), asset.height * (1 - c.top - c.bottom), w, h));
 }
 
 function pointInPoly(pts: [number, number][], x: number, y: number): boolean {
@@ -52,6 +55,15 @@ interface Gesture {
   startAngle: number;
   startCenter: { x: number; y: number };
   moved: boolean;
+  last?: Command;
+}
+
+/** Keyframed properties get a keyframe at the playhead; others change directly. */
+function gestureCommand(clipId: string, patch: Partial<Transform>): Command {
+  const commands = Object.entries(patch)
+    .map(([k, v]) => animatableCommand(clipId, k, v as number))
+    .filter((c): c is Command => c !== null);
+  return { type: "batch", payload: { label: "Move", commands } };
 }
 
 export function Preview() {
@@ -148,7 +160,7 @@ export function Preview() {
       if (pts.length === 2) {
         const [a, b] = pts as [{ x: number; y: number }, { x: number; y: number }];
         const loc = findClip(p, g.clipId);
-        if (loc) g.start = { ...loc.clip.transform };
+        if (loc) g.start = animatedTransform(loc.clip.transform, loc.clip.keyframes, s.playheadUs - loc.clip.startUs);
         g.startDist = Math.hypot(b.x - a.x, b.y - a.y);
         g.startAngle = Math.atan2(b.y - a.y, b.x - a.x);
         g.startCenter = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
@@ -163,7 +175,7 @@ export function Preview() {
       if (!track || track.hidden || track.type === "audio") continue;
       for (const clip of track.clips) {
         if (clip.startUs > s.playheadUs || s.playheadUs >= clip.startUs + clip.durationUs) continue;
-        const corners = clipCorners(p, clip, seqW, seqH);
+        const corners = clipCorners(p, clip, seqW, seqH, s.playheadUs);
         if (corners && pointInPoly(corners, pt.x, pt.y)) {
           hit = clip;
           break;
@@ -179,7 +191,7 @@ export function Preview() {
     (e.target as Element).setPointerCapture?.(e.pointerId);
     gestureRef.current = {
       clipId: hit.id,
-      start: { ...hit.transform },
+      start: animatedTransform(hit.transform, hit.keyframes, s.playheadUs - hit.startUs),
       pointers: new Map([[e.pointerId, pt]]),
       startDist: 0,
       startAngle: 0,
@@ -218,7 +230,8 @@ export function Preview() {
       patch = { x, y };
     }
     g.moved = true;
-    useEditor.getState().preview({ type: "clip/update", payload: { clipId: g.clipId, patch: { transform: patch } } });
+    g.last = gestureCommand(g.clipId, patch);
+    useEditor.getState().preview(g.last);
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
@@ -228,16 +241,16 @@ export function Preview() {
     if (g.pointers.size > 0) {
       // Continue as a one-finger drag from the remaining pointer.
       const rest = [...g.pointers.values()][0]!;
-      const loc = findClip(currentProject(useEditor.getState())!, g.clipId);
-      if (loc) g.start = { ...loc.clip.transform };
+      const st = useEditor.getState();
+      const loc = findClip(currentProject(st)!, g.clipId);
+      if (loc) g.start = animatedTransform(loc.clip.transform, loc.clip.keyframes, st.playheadUs - loc.clip.startUs);
       g.startCenter = rest;
       return;
     }
     gestureRef.current = null;
     const s = useEditor.getState();
-    if (g.moved && s.draft) {
-      const loc = findClip(s.draft, g.clipId);
-      if (loc) s.dispatch({ type: "clip/update", payload: { clipId: g.clipId, patch: { transform: loc.clip.transform } } });
+    if (g.moved && g.last) {
+      s.dispatch(g.last);
     } else {
       s.preview(null);
     }
@@ -249,7 +262,7 @@ export function Preview() {
     const loc = findClip(project, selection.clipId);
     const ph = useEditor.getState().playheadUs;
     if (loc && loc.clip.startUs <= ph && ph < loc.clip.startUs + loc.clip.durationUs) {
-      outline = clipCorners(project, loc.clip, seqW, seqH);
+      outline = clipCorners(project, loc.clip, seqW, seqH, ph);
     }
   }
   const sx = box.w / seqW;

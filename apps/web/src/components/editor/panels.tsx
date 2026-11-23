@@ -10,15 +10,17 @@ import {
   isMediaClip,
   isTextClip,
   secondsToUs,
+  SPEED_CURVE_PRESETS,
   type AspectPreset,
+  type BlendMode,
   type MediaClip,
   type TextAnimation,
   type TextClip,
   type TextStyle,
   type Transform,
 } from "@just-see/schema";
-import { EFFECTS, EFFECTS_BY_TYPE, TRANSITIONS, resolveParams, DEFAULT_TRANSITION_US, type EffectCategory } from "@just-see/engine";
-import { addEffect, setTransition, setTransitionEverywhere } from "@/lib/actions";
+import { EFFECTS, EFFECTS_BY_TYPE, TRANSITIONS, animatedTransform, resolveParams, DEFAULT_TRANSITION_US, type EffectCategory } from "@just-see/engine";
+import { KEYFRAME_PROPS, addEffect, animatableCommand, setTransition, setTransitionEverywhere, toggleTransformKeyframe } from "@/lib/actions";
 import { useEditor, useProject } from "@/lib/editor-store";
 import { useT } from "@/lib/i18n";
 import { addVersion, getVersion, listVersions, type VersionRecord } from "@/lib/storage/db";
@@ -32,31 +34,84 @@ function useSelectedClip() {
 }
 
 // ---------- Speed ----------
+const CURVES = Object.keys(SPEED_CURVE_PRESETS);
+
 export function SpeedPanel() {
   const t = useT();
   const loc = useSelectedClip();
+  const [mode, setMode] = useState<"constant" | "curve">("constant");
   if (!loc || !isMediaClip(loc.clip)) return null;
   const c = loc.clip;
-  const set = (speed: number) => useEditor.getState().dispatch({ type: "clip/setSpeed", payload: { clipId: c.id, speed } });
+  const d = useEditor.getState().dispatch;
+  const set = (speed: number) => d({ type: "clip/setSpeed", payload: { clipId: c.id, speed } });
   return (
     <Sheet title={t("speed")}>
-      <div className="no-scrollbar flex gap-2 overflow-x-auto py-2">
-        {[0.25, 0.5, 0.75, 1, 1.5, 2, 3, 5].map((s) => (
-          <Chip key={s} active={Math.abs(c.speed - s) < 1e-6} onClick={() => set(s)} testId={`speed-${s}`}>
-            {s}×
-          </Chip>
-        ))}
+      <div className="flex gap-2 py-2">
+        <Chip active={mode === "constant"} onClick={() => setMode("constant")}>
+          {t("constant")}
+        </Chip>
+        <Chip active={mode === "curve"} onClick={() => setMode("curve")} testId="speed-curve-tab">
+          {t("curve")}
+        </Chip>
+        <Chip active={c.reverse} onClick={() => d({ type: "clip/update", payload: { clipId: c.id, patch: { reverse: !c.reverse } } })} testId="reverse">
+          {t("reverse")}
+        </Chip>
       </div>
-      <CommitSlider
-        label={t("speed")}
-        value={Math.log2(c.speed)}
-        min={-3}
-        max={3.3}
-        step={0.01}
-        format={(v) => `${Math.pow(2, v).toFixed(2)}×`}
-        toCommand={(v) => ({ type: "clip/setSpeed", payload: { clipId: c.id, speed: Math.round(Math.pow(2, v) * 100) / 100 } })}
-      />
+      {mode === "constant" ? (
+        <>
+          <div className="no-scrollbar flex gap-2 overflow-x-auto py-2">
+            {[0.25, 0.5, 0.75, 1, 1.5, 2, 3, 5].map((s) => (
+              <Chip key={s} active={Math.abs(c.speed - s) < 1e-6} onClick={() => set(s)} testId={`speed-${s}`}>
+                {s}×
+              </Chip>
+            ))}
+          </div>
+          <CommitSlider
+            label={t("speed")}
+            value={Math.log2(c.speed)}
+            min={-3}
+            max={3.3}
+            step={0.01}
+            format={(v) => `${Math.pow(2, v).toFixed(2)}×`}
+            toCommand={(v) => ({ type: "clip/setSpeed", payload: { clipId: c.id, speed: Math.round(Math.pow(2, v) * 100) / 100 } })}
+          />
+        </>
+      ) : (
+        <div className="grid grid-cols-3 gap-2 py-2 sm:grid-cols-4">
+          <button
+            type="button"
+            className={`h-12 rounded-xl border text-xs ${!c.speedCurve ? "border-accent bg-accent/15" : "border-line bg-surface-2"}`}
+            onClick={() => d({ type: "clip/setSpeedCurve", payload: { clipId: c.id, curve: null } })}
+          >
+            {t("none")}
+          </button>
+          {CURVES.map((name) => (
+            <button
+              key={name}
+              type="button"
+              data-testid={`curve-${name}`}
+              className={`flex h-12 flex-col items-center justify-center rounded-xl border text-xs ${
+                c.speedCurve?.preset === name ? "border-accent bg-accent/15" : "border-line bg-surface-2"
+              }`}
+              onClick={() => d({ type: "clip/setSpeedCurve", payload: { clipId: c.id, curve: { preset: name, points: SPEED_CURVE_PRESETS[name]! } } })}
+            >
+              <CurveIcon points={SPEED_CURVE_PRESETS[name]!} />
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
     </Sheet>
+  );
+}
+
+function CurveIcon({ points }: { points: { p: number; s: number }[] }) {
+  const max = Math.max(...points.map((x) => x.s));
+  const d = points.map((x, i) => `${i ? "L" : "M"}${x.p * 40},${14 - (x.s / max) * 12}`).join(" ");
+  return (
+    <svg width="40" height="16" aria-hidden className="text-accent">
+      <path d={d} fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
   );
 }
 
@@ -420,29 +475,108 @@ export function AnimationPanel() {
 }
 
 // ---------- Adjust ----------
+const BLENDS: BlendMode[] = ["normal", "multiply", "screen", "overlay", "darken", "lighten", "add", "difference", "soft-light", "hard-light", "color-dodge", "color-burn"];
+
 export function AdjustPanel() {
   const t = useT();
   const loc = useSelectedClip();
+  const playhead = useEditor((s) => s.playheadUs);
   if (!loc) return null;
   const c = loc.clip;
-  const tf = c.transform;
+  const local = Math.min(Math.max(0, playhead - c.startUs), c.durationUs);
+  const tf = animatedTransform(c.transform, c.keyframes, local);
+  const animated = KEYFRAME_PROPS.some((k) => (c.keyframes[k]?.length ?? 0) > 0);
+  const atKey = KEYFRAME_PROPS.some((k) => c.keyframes[k]?.some((kf) => Math.abs(kf.t - local) <= 1000));
   const cmd = (transform: Partial<Transform>) => ({ type: "clip/update", payload: { clipId: c.id, patch: { transform } } }) as const;
+  const anim = (prop: string) => (v: number) => animatableCommand(c.id, prop, v) ?? cmd({});
   return (
     <Sheet title={t("adjust")}>
-      <CommitSlider label={t("scale")} value={tf.scale} min={0.1} max={5} step={0.01} format={(v) => `${Math.round(v * 100)}%`} toCommand={(v) => cmd({ scale: v })} />
-      <CommitSlider label={t("positionX")} value={tf.x} min={-1} max={1} step={0.005} toCommand={(v) => cmd({ x: v })} />
-      <CommitSlider label={t("positionY")} value={tf.y} min={-1} max={1} step={0.005} toCommand={(v) => cmd({ y: v })} />
-      <CommitSlider label={t("rotation")} value={tf.rotation} min={-180} max={180} step={1} format={(v) => `${Math.round(v)}°`} toCommand={(v) => cmd({ rotation: v })} />
-      <CommitSlider label={t("opacity")} value={tf.opacity} min={0} max={1} step={0.01} format={(v) => `${Math.round(v * 100)}%`} toCommand={(v) => cmd({ opacity: v })} />
+      <div className="flex items-center gap-2 py-2">
+        <button
+          type="button"
+          data-testid="keyframe-toggle"
+          onClick={() => toggleTransformKeyframe(c.id)}
+          aria-pressed={atKey}
+          className={`flex h-9 items-center gap-1 rounded-full px-3 text-sm ${atKey ? "bg-accent text-accent-contrast" : "bg-surface-2"}`}
+        >
+          <span aria-hidden>◆</span>
+          {atKey ? t("removeKeyframe") : t("addKeyframe")}
+        </button>
+        {animated && (
+          <button
+            type="button"
+            className="h-9 rounded-full bg-surface-2 px-3 text-sm"
+            onClick={() => useEditor.getState().dispatch({ type: "clip/clearKeyframes", payload: { clipId: c.id } })}
+          >
+            {t("clearKeyframes")}
+          </button>
+        )}
+      </div>
+      <CommitSlider label={t("scale")} value={tf.scale} min={0.1} max={5} step={0.01} format={(v) => `${Math.round(v * 100)}%`} toCommand={anim("scale")} testId="adjust-scale" />
+      <CommitSlider label={t("positionX")} value={tf.x} min={-1} max={1} step={0.005} toCommand={anim("x")} testId="adjust-x" />
+      <CommitSlider label={t("positionY")} value={tf.y} min={-1} max={1} step={0.005} toCommand={anim("y")} />
+      <CommitSlider label={t("rotation")} value={tf.rotation} min={-180} max={180} step={1} format={(v) => `${Math.round(v)}°`} toCommand={anim("rotation")} />
+      <CommitSlider label={t("opacity")} value={tf.opacity} min={0} max={1} step={0.01} format={(v) => `${Math.round(v * 100)}%`} toCommand={anim("opacity")} />
       <div className="flex flex-wrap gap-2 pt-2">
-        <Chip active={tf.flipH} onClick={() => useEditor.getState().dispatch(cmd({ flipH: !tf.flipH }))}>
+        <Chip active={c.transform.flipH} onClick={() => useEditor.getState().dispatch(cmd({ flipH: !c.transform.flipH }))}>
           {t("flipH")}
         </Chip>
-        <Chip active={tf.flipV} onClick={() => useEditor.getState().dispatch(cmd({ flipV: !tf.flipV }))}>
+        <Chip active={c.transform.flipV} onClick={() => useEditor.getState().dispatch(cmd({ flipV: !c.transform.flipV }))}>
           {t("flipV")}
         </Chip>
         <Chip onClick={() => useEditor.getState().dispatch(cmd({ ...DEFAULT_TRANSFORM }))}>{t("reset")}</Chip>
       </div>
+      <p className="mt-3 text-xs text-muted">{t("blendMode")}</p>
+      <div className="no-scrollbar flex gap-2 overflow-x-auto py-2">
+        {BLENDS.map((b) => (
+          <Chip
+            key={b}
+            active={c.blendMode === b}
+            testId={`blend-${b}`}
+            onClick={() => useEditor.getState().dispatch({ type: "clip/update", payload: { clipId: c.id, patch: { blendMode: b } } })}
+          >
+            {b}
+          </Chip>
+        ))}
+      </div>
+    </Sheet>
+  );
+}
+
+// ---------- Crop ----------
+export function CropPanel() {
+  const t = useT();
+  const loc = useSelectedClip();
+  const project = useProject();
+  if (!loc || !isMediaClip(loc.clip) || !project) return null;
+  const c = loc.clip;
+  const asset = project.assets.find((a) => a.id === c.assetId);
+  const d = useEditor.getState().dispatch;
+  const setRatio = (rw: number, rh: number) => {
+    if (!asset) return;
+    const ar = asset.width / Math.max(1, asset.height);
+    const target = rw / rh;
+    if (ar > target) {
+      const keep = target / ar;
+      d({ type: "clip/update", payload: { clipId: c.id, patch: { crop: { left: (1 - keep) / 2, right: (1 - keep) / 2, top: 0, bottom: 0 } } } });
+    } else {
+      const keep = ar / target;
+      d({ type: "clip/update", payload: { clipId: c.id, patch: { crop: { top: (1 - keep) / 2, bottom: (1 - keep) / 2, left: 0, right: 0 } } } });
+    }
+  };
+  const side = (k: "left" | "top" | "right" | "bottom") => (v: number) => animatableCommand(c.id, `crop.${k}`, v)!;
+  return (
+    <Sheet title={t("crop")}>
+      <div className="no-scrollbar flex gap-2 overflow-x-auto py-2">
+        <Chip onClick={() => d({ type: "clip/update", payload: { clipId: c.id, patch: { crop: { left: 0, top: 0, right: 0, bottom: 0 } } } })}>{t("none")}</Chip>
+        <Chip onClick={() => setRatio(9, 16)} testId="crop-9:16">9:16</Chip>
+        <Chip onClick={() => setRatio(1, 1)} testId="crop-1:1">1:1</Chip>
+        <Chip onClick={() => setRatio(4, 5)}>4:5</Chip>
+        <Chip onClick={() => setRatio(16, 9)}>16:9</Chip>
+      </div>
+      {(["left", "top", "right", "bottom"] as const).map((k) => (
+        <CommitSlider key={k} label={t(k)} value={c.crop[k]} min={0} max={0.9} step={0.005} format={(v) => `${Math.round(v * 100)}%`} toCommand={side(k)} />
+      ))}
     </Sheet>
   );
 }
@@ -453,6 +587,10 @@ export function CanvasPanel() {
   const project = useProject();
   if (!project) return null;
   const seq = getSequence(project);
+  const bg = seq.background;
+  const images = project.assets.filter((a) => a.kind === "image");
+  const setBg = (patch: Partial<typeof bg>) =>
+    useEditor.getState().dispatch({ type: "sequence/update", payload: { background: { ...bg, ...patch } } });
   return (
     <Sheet title={t("canvas")}>
       <p className="mt-1 text-xs text-muted">{t("aspectRatio")}</p>
@@ -472,11 +610,40 @@ export function CanvasPanel() {
           );
         })}
       </div>
-      <ColorRow
-        label={t("backgroundColor")}
-        value={seq.background.color}
-        onPick={(color) => useEditor.getState().dispatch({ type: "sequence/update", payload: { background: { kind: "color", color } } })}
-      />
+      <p className="mt-1 text-xs text-muted">{t("background")}</p>
+      <div className="flex gap-2 py-2">
+        <Chip active={bg.kind === "color"} onClick={() => setBg({ kind: "color" })} testId="bg-color">
+          {t("color")}
+        </Chip>
+        <Chip active={bg.kind === "blur"} onClick={() => setBg({ kind: "blur" })} testId="bg-blur">
+          {t("blur")}
+        </Chip>
+        <Chip active={bg.kind === "image"} onClick={() => images[0] && setBg({ kind: "image", assetId: bg.assetId ?? images[0].id })}>
+          {t("image")}
+        </Chip>
+      </div>
+      {bg.kind === "color" && <ColorRow label={t("backgroundColor")} value={bg.color} onPick={(color) => setBg({ color })} />}
+      {bg.kind === "blur" && (
+        <CommitSlider
+          label={t("intensity")}
+          value={bg.blur}
+          min={0}
+          max={1}
+          step={0.05}
+          format={(v) => `${Math.round(v * 100)}%`}
+          toCommand={(v) => ({ type: "sequence/update", payload: { background: { ...bg, blur: v } } })}
+        />
+      )}
+      {bg.kind === "image" && (
+        <div className="no-scrollbar flex gap-2 overflow-x-auto py-2">
+          {images.length === 0 && <p className="text-xs text-muted">{t("importPhotoFirst")}</p>}
+          {images.map((a) => (
+            <Chip key={a.id} active={bg.assetId === a.id} onClick={() => setBg({ assetId: a.id })}>
+              {a.name.slice(0, 18)}
+            </Chip>
+          ))}
+        </div>
+      )}
     </Sheet>
   );
 }

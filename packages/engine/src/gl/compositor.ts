@@ -3,7 +3,7 @@ import { TRANSITIONS_BY_TYPE } from "../transitions/catalog";
 import { identity, placementMatrix, scaling, uvRotationMatrix, multiply, translation, type Mat3 } from "../layout";
 import type { FramePlan, MediaSource, TextSource, VisualLayer } from "../resolve";
 import { drawText, textRasterKey, type Canvas2D } from "../text/raster";
-import { FULL_VS, QUAD_FS, QUAD_VS, effectFragment, transitionFragment } from "./shaders";
+import { BLEND_FS, BLEND_MODES, FULL_VS, QUAD_FS, QUAD_VS, effectFragment, transitionFragment } from "./shaders";
 
 export type GLCanvas = HTMLCanvasElement | OffscreenCanvas;
 
@@ -51,6 +51,7 @@ export class Compositor {
   private gl: WebGL2RenderingContext;
   private vao: WebGLVertexArrayObject;
   private quadProg: Program;
+  private blendProg: Program | null = null;
   private effectProgs = new Map<string, Program>();
   private transitionProgs = new Map<string, Program>();
   private targets: Target[] = [];
@@ -166,6 +167,11 @@ export class Compositor {
         errors.push(`effect ${t}: ${(e as Error).message}`);
       }
     }
+    try {
+      if (!this.blendProg) this.blendProg = this.compile(FULL_VS, BLEND_FS);
+    } catch (e) {
+      errors.push(`blend: ${(e as Error).message}`);
+    }
     for (const t of transitionTypes) {
       try {
         if (!TRANSITIONS_BY_TYPE.has(t)) throw new Error("unknown");
@@ -244,11 +250,11 @@ export class Compositor {
       entry = { canvas, ctx, key: "" };
       this.textCanvases.set(src.clipId, entry);
     }
-    const key = textRasterKey(src.clip, src.anim, w, h);
+    const key = textRasterKey(src.clip, src.anim, w, h, src.localUs);
     if (entry.key !== key) {
       if (entry.canvas.width !== w) entry.canvas.width = w;
       if (entry.canvas.height !== h) entry.canvas.height = h;
-      drawText(entry.ctx, src.clip, src.anim, w, h);
+      drawText(entry.ctx, src.clip, src.anim, w, h, src.localUs);
       entry.key = key;
     }
     return this.upload(`text:${src.clipId}`, entry.canvas, key);
@@ -294,8 +300,12 @@ export class Compositor {
       const img = provider.getImage(src);
       if (!img) return null;
       tex = this.upload(src.kind === "image" ? `img:${src.assetId}` : `vid:${src.clipId}`, img.image, img.version);
-      matrix = placementMatrix(layer.transform, src.width, src.height, w, h);
-      if (img.rotation % 360 !== 0) uv = uvRotationMatrix(img.rotation);
+      const c = layer.crop;
+      const cw = Math.max(0.05, 1 - c.left - c.right);
+      const ch = Math.max(0.05, 1 - c.top - c.bottom);
+      matrix = placementMatrix(layer.transform, src.width * cw, src.height * ch, w, h);
+      const cropUv: Mat3 = multiply(translation(c.left, c.top), scaling(cw, ch));
+      uv = img.rotation % 360 !== 0 ? multiply(uvRotationMatrix(img.rotation), cropUv) : cropUv;
     }
     let [a, b] = free;
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.target(a).fbo);
@@ -330,8 +340,32 @@ export class Compositor {
     return a;
   }
 
-  private compositeOnto(accum: number, from: number, opacity: number, w: number, h: number): void {
+  private compositeOnto(accum: number, from: number, opacity: number, w: number, h: number, mode: string = "normal"): void {
     const gl = this.gl;
+    const modeIndex = BLEND_MODES.indexOf(mode as (typeof BLEND_MODES)[number]);
+    if (modeIndex > 0) {
+      // Copy the frame so far, then blend the layer over it in a shader.
+      const scratch = from === 3 ? 2 : 3;
+      this.copy(accum, scratch, w, h);
+      if (!this.blendProg) this.blendProg = this.compile(FULL_VS, BLEND_FS);
+      const p = this.blendProg;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.target(accum).fbo);
+      gl.viewport(0, 0, w, h);
+      gl.disable(gl.BLEND);
+      gl.useProgram(p.prog);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.target(scratch).tex);
+      gl.uniform1i(this.loc(p, "uBase"), 0);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.target(from).tex);
+      gl.uniform1i(this.loc(p, "uTop"), 1);
+      gl.uniform1f(this.loc(p, "uOpacity"), opacity);
+      gl.uniform1i(this.loc(p, "uMode"), modeIndex);
+      gl.bindVertexArray(this.vao);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      gl.activeTexture(gl.TEXTURE0);
+      return;
+    }
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.target(accum).fbo);
     gl.viewport(0, 0, w, h);
     gl.enable(gl.BLEND);
@@ -358,7 +392,7 @@ export class Compositor {
     for (const layer of plan.layers) {
       if (layer.kind === "visual") {
         const out = this.renderLayer(layer, provider, w, h, [1, 2]);
-        if (out !== null) this.compositeOnto(ACC, out, layer.opacity, w, h);
+        if (out !== null) this.compositeOnto(ACC, out, layer.opacity, w, h, layer.blendMode);
         continue;
       }
       // Transition: render both sides, then mix.
@@ -389,7 +423,7 @@ export class Compositor {
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       gl.activeTexture(gl.TEXTURE0);
       const opacity = layer.from.opacity * (1 - layer.progress) + layer.to.opacity * layer.progress;
-      this.compositeOnto(ACC, 4, opacity, w, h);
+      this.compositeOnto(ACC, 4, opacity, w, h, layer.to.blendMode);
     }
 
     // Present.
@@ -451,6 +485,7 @@ export class Compositor {
       gl.deleteTexture(t.tex);
     }
     for (const p of [...this.effectProgs.values(), ...this.transitionProgs.values(), this.quadProg]) gl.deleteProgram(p.prog);
+    if (this.blendProg) gl.deleteProgram(this.blendProg.prog);
     this.textures.clear();
     this.targets = [];
     this.effectProgs.clear();

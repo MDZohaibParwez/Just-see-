@@ -29,6 +29,7 @@ export type Panel =
   | "textStyle"
   | "animation"
   | "adjust"
+  | "crop"
   | "canvas"
   | "export"
   | "history"

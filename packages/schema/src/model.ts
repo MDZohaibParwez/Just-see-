@@ -51,6 +51,64 @@ export const TransitionSchema = z.object({
 });
 export type Transition = z.infer<typeof TransitionSchema>;
 
+export const EasingSchema = z.enum(["linear", "ease-in", "ease-out", "ease-in-out", "hold", "bezier"]);
+export type Easing = z.infer<typeof EasingSchema>;
+
+/** One keyframe. `t` is clip-local time (µs from the clip's start on the timeline). */
+export const KeyframeSchema = z.object({
+  t: MicrosSchema,
+  v: z.number(),
+  /** Easing from this keyframe to the next. */
+  ease: EasingSchema,
+  /** Cubic bezier control points (x1, y1, x2, y2) when ease = "bezier". */
+  bezier: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional(),
+});
+export type Keyframe = z.infer<typeof KeyframeSchema>;
+
+/**
+ * Animated properties: key → keyframes sorted by time. Keys are "x", "y",
+ * "scale", "rotation", "opacity", "volume", "crop.left|top|right|bottom" and
+ * "fx.<effectId>.<param>".
+ */
+export const KeyframesSchema = z.record(z.string().max(120), z.array(KeyframeSchema).max(500));
+export type Keyframes = z.infer<typeof KeyframesSchema>;
+
+export const BlendModeSchema = z.enum([
+  "normal",
+  "multiply",
+  "screen",
+  "overlay",
+  "darken",
+  "lighten",
+  "add",
+  "difference",
+  "soft-light",
+  "hard-light",
+  "color-dodge",
+  "color-burn",
+]);
+export type BlendMode = z.infer<typeof BlendModeSchema>;
+
+/** Crop as fractions trimmed from each edge (0..0.95). */
+export const CropSchema = z.object({
+  left: z.number().min(0).max(0.95),
+  top: z.number().min(0).max(0.95),
+  right: z.number().min(0).max(0.95),
+  bottom: z.number().min(0).max(0.95),
+});
+export type Crop = z.infer<typeof CropSchema>;
+export const NO_CROP: Crop = { left: 0, top: 0, right: 0, bottom: 0 };
+
+/**
+ * Speed ramp: speed multipliers at points along the clip (p = 0..1 of the
+ * clip's timeline length), linearly interpolated. Multiplies `speed`.
+ */
+export const SpeedCurveSchema = z.object({
+  preset: z.string().max(40),
+  points: z.array(z.object({ p: z.number().min(0).max(1), s: z.number().min(0.1).max(20) })).min(2).max(32),
+});
+export type SpeedCurve = z.infer<typeof SpeedCurveSchema>;
+
 export const LicenseSchema = z.object({
   /** user-upload: the user's own media. Library assets come in Phase 5. */
   kind: z.enum(["user-upload", "library"]),
@@ -109,6 +167,15 @@ export const MediaClipSchema = z.object({
   transitionIn: TransitionSchema.nullable(),
   fadeInUs: MicrosSchema,
   fadeOutUs: MicrosSchema,
+  // ---- Added in Phase 2 (defaults keep older projects valid) ----
+  crop: CropSchema.default(NO_CROP),
+  blendMode: BlendModeSchema.default("normal"),
+  keyframes: KeyframesSchema.default({}),
+  /** Play the source backwards. */
+  reverse: z.boolean().default(false),
+  /** Freeze frame: show the frame at sourceInUs for the whole clip. */
+  holdFrame: z.boolean().default(false),
+  speedCurve: SpeedCurveSchema.nullable().default(null),
 });
 export type MediaClip = z.infer<typeof MediaClipSchema>;
 
@@ -143,6 +210,8 @@ export const TextStyleSchema = z.object({
   shadow: z.boolean(),
   lineHeight: z.number().min(0.5).max(3),
   letterSpacing: z.number().min(-0.5).max(2),
+  /** Karaoke highlight colour for the active word. */
+  highlightColor: z.string().max(32).default("#ffd60a"),
 });
 export type TextStyle = z.infer<typeof TextStyleSchema>;
 
@@ -156,6 +225,13 @@ export const TextClipSchema = z.object({
   animationOut: TextAnimationSchema,
   animationDurationUs: MicrosSchema,
   effects: z.array(EffectInstanceSchema).max(32),
+  // ---- Added in Phase 2 ----
+  blendMode: BlendModeSchema.default("normal"),
+  keyframes: KeyframesSchema.default({}),
+  /** Word timings (clip-local µs) for karaoke captions. Empty = plain text. */
+  words: z.array(z.object({ text: z.string().max(200), startUs: MicrosSchema, endUs: MicrosSchema })).max(2000).default([]),
+  /** Caption clips are generated from a transcript and grouped. */
+  captionGroup: z.string().max(64).nullable().default(null),
 });
 export type TextClip = z.infer<typeof TextClipSchema>;
 
@@ -182,8 +258,12 @@ export const TrackSchema = z.object({
 export type Track = Omit<z.infer<typeof TrackSchema>, "clips"> & { clips: Clip[] };
 
 export const BackgroundSchema = z.object({
-  kind: z.enum(["color"]),
+  kind: z.enum(["color", "blur", "image"]),
   color: z.string().max(32),
+  /** Blur strength for kind "blur" (0..1). */
+  blur: z.number().min(0).max(1).default(0.6),
+  /** Image asset for kind "image". */
+  assetId: IdSchema.nullable().default(null),
 });
 export type Background = z.infer<typeof BackgroundSchema>;
 

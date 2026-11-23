@@ -144,7 +144,7 @@ export async function exportMp4(project: Project, loader: MediaLoader, opts: Exp
       const seg = segments[i]!;
       const asset = getAsset(project, seg.assetId);
       if (!asset) continue;
-      const end = seg.sourceInUs + seg.durationUs * seg.speed;
+      const end = seg.sourceInUs + (seg.sourceSpanUs ?? seg.durationUs * seg.speed);
       let data: Pcm | null = null;
       const d = await demuxerFor(asset);
       if (d?.audio && typeof AudioDecoder !== "undefined") {

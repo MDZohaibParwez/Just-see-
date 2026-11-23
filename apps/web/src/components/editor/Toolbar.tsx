@@ -2,7 +2,7 @@
 
 import { Icon, type IconName } from "@just-see/ui";
 import { findClip, isMediaClip } from "@just-see/schema";
-import { addText, deleteSelection, duplicateSelection, splitAtPlayhead } from "@/lib/actions";
+import { addText, deleteSelection, duplicateSelection, freezeFrame, splitAtPlayhead } from "@/lib/actions";
 import { useEditor, useProject, type Panel } from "@/lib/editor-store";
 import { useT, type MessageKey } from "@/lib/i18n";
 
@@ -41,12 +41,14 @@ export function Toolbar({ onImport, onImportMusic }: { onImport: () => void; onI
   } else if (loc && isMediaClip(loc.clip)) {
     const c = loc.clip;
     tools = [{ id: "split", icon: "split", label: "split", run: splitAtPlayhead }];
-    if (c.kind !== "image") tools.push({ id: "speed", icon: "speed", label: "speed", run: open("speed") });
+    if (c.kind !== "image" && !c.holdFrame) tools.push({ id: "speed", icon: "speed", label: "speed", run: open("speed") });
     if (c.kind !== "image") tools.push({ id: "volume", icon: "volume", label: "volume", run: open("volume") });
     if (c.kind !== "audio") {
       tools.push({ id: "effects", icon: "effects", label: "effects", run: open("effects") });
       tools.push({ id: "adjust", icon: "adjust", label: "adjust", run: open("adjust") });
+      tools.push({ id: "crop", icon: "crop", label: "crop", run: open("crop") });
     }
+    if (c.kind === "video" && !c.holdFrame) tools.push({ id: "freeze", icon: "freeze", label: "freeze", run: freezeFrame });
     if (loc.track.type === "main" && loc.index > 0) {
       tools.push({
         id: "transition",

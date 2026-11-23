@@ -16,7 +16,9 @@ import {
   getAsset,
   getSequence,
   isMediaClip,
+  playbackRateAt,
   sequenceDurationUs,
+  sourceOffsetAt,
   type Asset,
   type MediaClip,
   type Project,
@@ -173,7 +175,7 @@ export class PreviewPlayer {
     const slot = this.video.get(clipId);
     if (!slot || slot.el.readyState < 2) return null;
     // While playing, upload every frame; paused, only after a seek finished.
-    return { image: slot.el, rotation: 0, version: this.playing ? ++this.frameCounter : slot.version };
+    return { image: slot.el, rotation: 0, version: this.playing && !slot.el.paused ? ++this.frameCounter : slot.version };
   }
 
   /** Make media elements match the timeline at time t. */
@@ -182,6 +184,10 @@ export class PreviewPlayer {
     if (!project) return;
     const now = performance.now();
     const seq = getSequence(project);
+    if (seq.background.kind === "image" && seq.background.assetId) {
+      const bgAsset = getAsset(project, seq.background.assetId);
+      if (bgAsset && !this.images.has(bgAsset.id)) this.loadImage(bgAsset);
+    }
     const wantedVideo = new Set<string>();
     const wantedAudio = new Set<string>();
 
@@ -199,21 +205,22 @@ export class PreviewPlayer {
           continue;
         }
         const local = active ? t - clip.startUs : 0;
-        const srcTime = (clip.sourceInUs + local * clip.speed) / 1e6;
+        const srcTime = (clip.sourceInUs + sourceOffsetAt(clip, local)) / 1e6;
+        const rate = playbackRateAt(clip, local);
         const muted = track.muted || clip.muted || (clip.kind === "video" && !asset.hasAudio);
         const seg = this.segments.find((s) => s.clipId === clip.id);
         const gain = active && seg && !muted ? Math.min(1, segmentGainAt(seg, t)) : 0;
         if (clip.kind === "video") {
           wantedVideo.add(clip.id);
           const slot = this.videoSlot(clip, asset, now);
-          this.drive(slot.el, srcTime, clip, active && playing, gain, active || !playing, () => {
+          this.drive(slot.el, srcTime, clip, rate, active && playing, gain, active || !playing, () => {
             slot.version++;
             this.dirty = true;
           });
         } else {
           wantedAudio.add(clip.id);
           const slot = this.audioSlot(clip, asset, now);
-          this.drive(slot.el, srcTime, clip, active && playing, gain, active, () => {});
+          this.drive(slot.el, srcTime, clip, rate, active && playing, gain, active, () => {});
         }
       }
     }
@@ -239,17 +246,29 @@ export class PreviewPlayer {
     el: HTMLMediaElement,
     srcTime: number,
     clip: MediaClip,
+    rate: number,
     shouldPlay: boolean,
     gain: number,
     shouldSeek: boolean,
     onSeeked: () => void,
   ): void {
-    if (el.playbackRate !== clip.speed) el.playbackRate = clip.speed;
+    // Elements cannot play backwards or hold a frame: drive those by seeking.
+    if (shouldPlay && (clip.reverse || clip.holdFrame)) {
+      if (!el.paused) el.pause();
+      el.muted = true;
+      if (Math.abs(el.currentTime - srcTime) > 1 / 60 && !el.seeking) {
+        el.onseeked = onSeeked;
+        el.currentTime = srcTime;
+      }
+      return;
+    }
+    const r = Math.min(16, Math.max(0.0625, rate || 1));
+    if (Math.abs(el.playbackRate - r) > 0.01) el.playbackRate = r;
     (el as HTMLMediaElement & { preservesPitch?: boolean }).preservesPitch = false;
     el.volume = Math.max(0, Math.min(1, gain));
     el.muted = gain <= 0;
     if (shouldPlay) {
-      if (Math.abs(el.currentTime - srcTime) > DRIFT_S * clip.speed) el.currentTime = srcTime;
+      if (Math.abs(el.currentTime - srcTime) > DRIFT_S * Math.max(1, r)) el.currentTime = srcTime;
       if (el.paused) {
         el.play().catch(() => {
           // Autoplay with sound blocked: play muted instead.

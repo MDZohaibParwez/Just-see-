@@ -1,5 +1,6 @@
 import {
   DEFAULT_TRANSFORM,
+  NO_CROP,
   SCHEMA_VERSION,
   type Asset,
   type MediaClip,
@@ -55,7 +56,7 @@ export function createSequence(opts: {
     width: opts.width,
     height: opts.height,
     fps: opts.fps ?? 30,
-    background: { kind: "color", color: "#000000" },
+    background: { kind: "color", color: "#000000", blur: 0.6, assetId: null },
     tracks: [createTrack("main")],
   };
 }
@@ -110,6 +111,12 @@ export function createMediaClip(asset: Asset, opts: { id?: string; startUs?: num
     transitionIn: null,
     fadeInUs: 0,
     fadeOutUs: 0,
+    crop: { ...NO_CROP },
+    blendMode: "normal",
+    keyframes: {},
+    reverse: false,
+    holdFrame: false,
+    speedCurve: null,
   };
 }
 
@@ -127,6 +134,7 @@ export const DEFAULT_TEXT_STYLE: TextStyle = {
   shadow: true,
   lineHeight: 1.2,
   letterSpacing: 0,
+  highlightColor: "#ffd60a",
 };
 
 export function createTextClip(opts: { id?: string; text?: string; startUs?: number; durationUs?: number } = {}): TextClip {
@@ -142,5 +150,9 @@ export function createTextClip(opts: { id?: string; text?: string; startUs?: num
     animationOut: "fade",
     animationDurationUs: secondsToUs(0.4),
     effects: [],
+    blendMode: "normal",
+    keyframes: {},
+    words: [],
+    captionGroup: null,
   };
 }

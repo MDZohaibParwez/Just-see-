@@ -1,3 +1,4 @@
+import { sampleKeyframes } from "@just-see/schema";
 import type { AudioSegment } from "../resolve";
 import type { Mp4Demuxer } from "./demux";
 
@@ -115,13 +116,14 @@ export function mixSegments(
     const endN = Math.min(length, Math.round(((seg.timelineStartUs + seg.durationUs) / 1e6) * sampleRate));
     const ratio = (seg.speed * pcm.sampleRate) / sampleRate;
     const srcOffset = ((seg.sourceInUs - pcm.startUs) / 1e6) * pcm.sampleRate;
+    const mapped = seg.sourceOffsetAt;
     for (let n = startN; n < endN; n++) {
       const localUs = ((n - startN) / sampleRate) * 1e6;
-      let g = seg.gain;
+      let g = seg.volumeKeyframes ? sampleKeyframes(seg.volumeKeyframes, localUs, seg.gain) : seg.gain;
       if (seg.fadeInUs > 0) g *= clamp01(localUs / seg.fadeInUs);
       if (seg.fadeOutUs > 0) g *= clamp01((seg.durationUs - localUs) / seg.fadeOutUs);
       if (g === 0) continue;
-      const pos = srcOffset + (n - startN) * ratio;
+      const pos = mapped ? srcOffset + (mapped(localUs) / 1e6) * pcm.sampleRate : srcOffset + (n - startN) * ratio;
       const i = Math.floor(pos);
       if (i < 0 || i >= srcLen) continue;
       const f = pos - i;
