@@ -113,6 +113,8 @@ export function Preview() {
       if (!st.playing) player.seek(st.playheadUs);
     };
     window.addEventListener("justsee:fonts", onFonts);
+    const onMedia = (e: Event) => player.refreshAsset((e as CustomEvent<string>).detail);
+    window.addEventListener("justsee:media", onMedia);
     const unsub = useEditor.subscribe((st, prev) => {
       const np = currentProject(st);
       const pp = currentProject(prev);
@@ -129,6 +131,7 @@ export function Preview() {
     });
     return () => {
       window.removeEventListener("justsee:fonts", onFonts);
+      window.removeEventListener("justsee:media", onMedia);
       unsub();
       player.destroy();
       playerRef.current = null;

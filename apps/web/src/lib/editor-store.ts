@@ -80,6 +80,27 @@ interface EditorState {
   setEditMode(m: EditorState["editMode"]): void;
   toggleMulti(clipId: string): void;
   setMultiMode(on: boolean): void;
+  /** Apply a change made by someone else in a live session (not added to local undo). */
+  applyRemote(command: Command): boolean;
+  /** Replace the whole project from a live session host (keeps the editor open). */
+  replaceProject(project: Project): void;
+}
+
+type CommandListener = (command: Command) => void;
+const listeners = new Set<CommandListener>();
+/** Listen to every local change (dispatch, undo, redo). Used by live editing. */
+export function onLocalCommand(fn: CommandListener): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+function emit(command: Command): void {
+  for (const fn of listeners) {
+    try {
+      fn(command);
+    } catch (e) {
+      console.error(e);
+    }
+  }
 }
 
 export const MIN_PX_PER_SECOND = 8;
@@ -137,6 +158,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       // Drop selection if the clip vanished.
       const sel = get().selection;
       if (sel && !clipExists(next.project, sel.clipId)) set({ selection: null, panel: null });
+      emit(command);
       return true;
     } catch (e) {
       set({ draft: null });
@@ -163,8 +185,10 @@ export const useEditor = create<EditorState>((set, get) => ({
   undo() {
     const h = get().history;
     if (!h || !canUndo(h)) return;
+    const entry = h.past[h.past.length - 1];
     const next = undoHistory(h);
     set((s) => ({ history: next, draft: null, revision: s.revision + 1 }));
+    if (entry) emit(entry.inverse);
     const sel = get().selection;
     if (sel && !clipExists(next.project, sel.clipId)) set({ selection: null, panel: null });
   },
@@ -172,8 +196,32 @@ export const useEditor = create<EditorState>((set, get) => ({
   redo() {
     const h = get().history;
     if (!h || !canRedo(h)) return;
+    const entry = h.future[0];
     const next = redoHistory(h);
     set((s) => ({ history: next, draft: null, revision: s.revision + 1 }));
+    if (entry) emit(entry.command);
+  },
+
+  applyRemote(command) {
+    const h = get().history;
+    if (!h) return false;
+    try {
+      const r = applyCommand(h.project, command);
+      if (!r.changed) return true;
+      set((s) => ({ history: { ...h, project: r.project }, revision: s.revision + 1 }));
+      const sel = get().selection;
+      if (sel && !clipExists(r.project, sel.clipId)) set({ selection: null, panel: null });
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  replaceProject(project) {
+    const h = get().history;
+    set((s) => ({ history: h ? { ...h, project, past: [], future: [] } : createHistory(project), draft: null, revision: s.revision + 1 }));
+    const sel = get().selection;
+    if (sel && !clipExists(project, sel.clipId)) set({ selection: null, panel: null });
   },
 
   setPlayhead(us) {

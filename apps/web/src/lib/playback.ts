@@ -489,6 +489,17 @@ export class PreviewPlayer {
     this.video.delete(id);
   }
 
+  /** A media file arrived or changed (live editing, re-bounce): reload everything that used it. */
+  refreshAsset(assetId: string): void {
+    for (const [id, slot] of [...this.video.entries()]) if (slot.assetId === assetId) this.dropVideo(id);
+    const img = this.images.get(assetId);
+    if (img && img !== "loading") img.close();
+    this.images.delete(assetId);
+    this.demuxers.delete(assetId);
+    this.clearExact();
+    this.dirty = true;
+  }
+
   private loadImage(asset: Asset): void {
     this.images.set(asset.id, "loading");
     void assetBlob(asset)

@@ -229,6 +229,7 @@ export function ExportPanel() {
             {t("backupSave")}
           </button>
           <p className="text-center text-[11px] text-muted">{t("backupHint")}</p>
+          <ShareButtons />
         </div>
       ) : state.kind === "running" ? (
         <div className="py-4" aria-live="polite">
@@ -276,5 +277,42 @@ export function ExportPanel() {
         </div>
       )}
     </Sheet>
+  );
+}
+
+function ShareButtons() {
+  const t = useT();
+  const project = useProject();
+  const [state, setState] = useState<{ busy: boolean; link: string; error: string; progress: number }>({ busy: false, link: "", error: "", progress: 0 });
+  if (!project) return null;
+  const copy = async () => {
+    setState({ busy: true, link: "", error: "", progress: 0 });
+    try {
+      const { shareCopy } = await import("@/lib/share");
+      const link = await shareCopy(project, (p) => setState((s) => ({ ...s, progress: p })));
+      await navigator.clipboard?.writeText(link).catch(() => undefined);
+      setState({ busy: false, link, error: "", progress: 1 });
+    } catch (e) {
+      setState({ busy: false, link: "", error: e instanceof Error ? e.message : String(e), progress: 0 });
+    }
+  };
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-line p-2">
+      <div className="flex gap-2">
+        <button type="button" data-testid="share-copy" disabled={state.busy} className="flex-1 rounded-xl bg-surface-2 py-3 text-sm" onClick={() => void copy()}>
+          {state.busy ? `${t("sharing")} ${Math.round(state.progress * 100)}%` : t("shareCopy")}
+        </button>
+        <button type="button" data-testid="share-live" className="flex-1 rounded-xl bg-surface-2 py-3 text-sm" onClick={() => { useEditor.getState().openPanel(null); window.dispatchEvent(new Event("justsee:live")); }}>
+          {t("shareLive")}
+        </button>
+      </div>
+      {state.link && (
+        <div className="text-xs">
+          <p className="text-muted">{t("shareLinkReady")}</p>
+          <input readOnly value={state.link} data-testid="share-link" className="mt-1 w-full rounded-lg bg-surface-2 px-2 py-2" onFocus={(e) => e.currentTarget.select()} />
+        </div>
+      )}
+      {state.error && <p className="text-xs text-danger">{state.error}</p>}
+    </div>
   );
 }

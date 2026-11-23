@@ -7,3 +7,4 @@ export * from "./history";
 export * from "./keyframes";
 export * from "./session";
 export * from "./motion";
+export * from "./recipe";

@@ -11,6 +11,7 @@ import { AudioFxPanel, SfxPanel } from "./AudioPanels";
 import { StudioScreen, useStudioUi } from "./StudioScreen";
 import { MotionScreen, useMotionUi } from "./MotionScreen";
 import { LibraryScreen, useLibraryUi } from "./LibraryScreen";
+import { LivePanel } from "./LivePanel";
 import {
   AdjustPanel,
   AnimationPanel,
@@ -194,6 +195,7 @@ export function Editor() {
       <StudioScreen />
       <MotionScreen />
       <LibraryScreen />
+      <LivePanel />
       <p className="sr-only">{t("keyboardHint")}</p>
       <input
         ref={mediaInput}
