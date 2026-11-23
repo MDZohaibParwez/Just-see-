@@ -88,6 +88,7 @@ export function createProject(opts: {
     sequences: [sequence],
     activeSequenceId: sequence.id,
     audioSessions: [],
+    motionComps: [],
   };
 }
 
@@ -160,5 +161,6 @@ export function createTextClip(opts: { id?: string; text?: string; startUs?: num
     keyframes: {},
     words: [],
     captionGroup: null,
+    motionCompId: null,
   };
 }

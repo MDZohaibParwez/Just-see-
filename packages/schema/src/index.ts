@@ -6,3 +6,4 @@ export * from "./commands";
 export * from "./history";
 export * from "./keyframes";
 export * from "./session";
+export * from "./motion";

@@ -9,6 +9,7 @@ import { ExportPanel } from "./ExportPanel";
 import { CaptionsPanel } from "./CaptionsPanel";
 import { AudioFxPanel, SfxPanel } from "./AudioPanels";
 import { StudioScreen, useStudioUi } from "./StudioScreen";
+import { MotionScreen, useMotionUi } from "./MotionScreen";
 import {
   AdjustPanel,
   AnimationPanel,
@@ -112,7 +113,7 @@ export function Editor() {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
-      if (useStudioUi.getState().openId) return;
+      if (useStudioUi.getState().openId || useMotionUi.getState().openId) return;
       const s = useEditor.getState();
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key.toLowerCase() === "z") {
@@ -190,6 +191,7 @@ export function Editor() {
         {hasPanel && desktop && <aside className="flex w-[360px] shrink-0 flex-col">{<ActivePanel />}</aside>}
       </div>
       <StudioScreen />
+      <MotionScreen />
       <p className="sr-only">{t("keyboardHint")}</p>
       <input
         ref={mediaInput}

@@ -143,6 +143,15 @@ Known Phase 1 limits:
 - **Studio sessions**: `project.audioSessions` (`schema/src/session.ts`) hold tracks, patterns, instruments, regions and mixer settings. `renderStudio` renders a session offline (drums, synths, regions → track fx → pan/volume automation → sidechain → reverb bus → master soft clip and true-peak limiter). "Send to video" bounces a WAV asset and places or updates an audio clip. Every change is one `session/put` command, so undo works across the studio and the editor.
 - **Sounds and moods**: `audio/sfx.ts` synthesises sound effects; `audio/moods.ts` builds editable sessions for background music moods.
 
+## Phase 4 additions (motion)
+
+- **Schema** (`schema/src/motion.ts`): `project.motionComps` holds compositions. A layer has a transform (anchor, position, scale, rotation, opacity), keyframes keyed by property path (`x`, `shape.trimEnd`, `anim.progress`, `fx.glow` …), optional parent, matte, blend mode, shape/text/image data and effects. Index 0 is the top layer.
+- **Evaluation** (`engine/src/motion/eval.ts`): pure functions sample keyframes (with loop and wiggle), build 2D affine matrices through parents, flatten shapes to polylines, cut trim paths and compute text-animator amounts. All unit-tested without a DOM.
+- **Rendering** (`engine/src/motion/render.ts`): Canvas 2D, so it runs on a normal canvas or an `OffscreenCanvas`. Layers with mattes or glow/blur are drawn into a scratch canvas first.
+- **Timeline**: a text clip with `motionCompId` resolves to a `MotionSource`. The compositor renders the comp to a cached canvas (keyed by comp object, time, size and image versions), uploads it as a texture and places it like an image, so clip transform, effects and fades still apply. Preview and export use the same path.
+- **Lottie** (`engine/src/motion/lottie.ts`): export bakes animated values every 2 frames; import reads the same subset back.
+- **Templates** (`engine/src/motion/templates.ts`): functions that build comps sized to the video, with `editable` fields for the quick-edit panel.
+
 ## Web app
 
 - Next.js App Router, **static export** (`output: "export"`). Everything runs on the device; no server is needed in Phase 1.

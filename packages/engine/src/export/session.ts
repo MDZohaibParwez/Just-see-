@@ -226,7 +226,7 @@ export class RenderSession {
     if (this.opts.maskProvider) {
       const wants = new Set<string>();
       const visit = (l: VisualLayer) => {
-        if (l.source.kind !== "text" && l.effects.some((e) => e.type === "bg-remove")) wants.add(l.source.clipId);
+        if ((l.source.kind === "video" || l.source.kind === "image") && l.effects.some((e) => e.type === "bg-remove")) wants.add(l.source.clipId);
       };
       for (const l of plan.layers) {
         if (l.kind === "transition") {

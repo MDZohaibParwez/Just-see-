@@ -74,7 +74,7 @@ describe("phase 2 rendering", () => {
   it("reverses source time for video and audio", () => {
     const p = run(one(), { type: "clip/update", payload: { clipId: "c", patch: { reverse: true } } });
     const l = resolveFrame(p, S(1)).layers[0];
-    if (l?.kind === "visual" && l.source.kind !== "text") expect(l.source.sourceTimeUs).toBe(S(9));
+    if (l?.kind === "visual" && l.source.kind !== "text" && l.source.kind !== "motion") expect(l.source.sourceTimeUs).toBe(S(9));
     const segs = resolveAudio(p);
     const sr = 1000;
     const ramp = new Float32Array(10_000).map((_, i) => i / 10_000);
@@ -101,7 +101,7 @@ describe("phase 2 rendering", () => {
     const p = run(one(), { type: "clip/freeze", payload: { clipId: "c", atUs: S(3), newClipId: "f", tailClipId: "t", durationUs: S(2) } });
     const a = resolveFrame(p, S(3.5)).layers[0];
     const b = resolveFrame(p, S(4.5)).layers[0];
-    if (a?.kind === "visual" && b?.kind === "visual" && a.source.kind !== "text" && b.source.kind !== "text") {
+    if (a?.kind === "visual" && b?.kind === "visual" && a.source.kind !== "text" && b.source.kind !== "text" && a.source.kind !== "motion" && b.source.kind !== "motion") {
       expect(a.source.sourceTimeUs).toBe(S(3));
       expect(b.source.sourceTimeUs).toBe(S(3));
     }

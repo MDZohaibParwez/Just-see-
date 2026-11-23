@@ -1,7 +1,8 @@
 import { EFFECTS_BY_TYPE, resolveParams, type EffectDef } from "../effects/catalog";
 import { TRANSITIONS_BY_TYPE } from "../transitions/catalog";
 import { identity, placementMatrix, scaling, uvRotationMatrix, multiply, translation, type Mat3 } from "../layout";
-import type { FramePlan, MediaSource, TextSource, VisualLayer } from "../resolve";
+import type { FramePlan, MediaSource, MotionSource, TextSource, VisualLayer } from "../resolve";
+import { renderMotion, type Ctx2D } from "../motion/render";
 import type { Lut3D } from "../media/lut";
 import { drawText, textRasterKey, type Canvas2D } from "../text/raster";
 import { BLEND_FS, BLEND_MODES, FULL_VS, QUAD_FS, QUAD_MASK_FS, QUAD_VS, effectFragment, transitionFragment } from "./shaders";
@@ -64,6 +65,9 @@ export class Compositor {
   private targetW = 0;
   private targetH = 0;
   private textures = new Map<string, CachedTexture>();
+  private motionCanvases = new Map<string, { canvas: GLCanvas; ctx: Ctx2D; key: string }>();
+  private compVersions = new WeakMap<object, number>();
+  private compCounter = 0;
   private textCanvases = new Map<string, { canvas: GLCanvas; ctx: Canvas2D; key: string }>();
   private usedThisFrame = new Set<string>();
   private luts = new Map<string, { tex: WebGLTexture; size: number }>();
@@ -276,6 +280,46 @@ export class Compositor {
     return this.upload(`text:${src.clipId}`, entry.canvas, key);
   }
 
+  /** Render a motion comp to a canvas (cached per comp version and time). */
+  private motionTexture(src: MotionSource, layer: VisualLayer, provider: SourceProvider, w: number, h: number): { tex: WebGLTexture; cw: number; ch: number } {
+    const comp = src.comp;
+    // Pixels per comp pixel: enough for the comp's size on screen, capped for memory.
+    const fit = Math.min(w / comp.width, h / comp.height) * Math.max(1, Math.abs(layer.transform.scale));
+    const scale = Math.min(fit, 4096 / Math.max(comp.width, comp.height));
+    const cw = Math.max(1, Math.round(comp.width * scale));
+    const ch = Math.max(1, Math.round(comp.height * scale));
+    let entry = this.motionCanvases.get(src.clipId);
+    if (!entry) {
+      const canvas: GLCanvas = typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(cw, ch) : Object.assign(document.createElement("canvas"), { width: cw, height: ch });
+      const ctx = canvas.getContext("2d") as Ctx2D | null;
+      if (!ctx) throw new Error("2D canvas is not available");
+      entry = { canvas, ctx, key: "" };
+      this.motionCanvases.set(src.clipId, entry);
+    }
+    let ver = this.compVersions.get(comp);
+    if (ver === undefined) {
+      ver = ++this.compCounter;
+      this.compVersions.set(comp, ver);
+    }
+    const images = new Map<string, CanvasImageSource>();
+    const imgVersions: (string | number)[] = [];
+    for (const m of src.images) {
+      const r = provider.getImage(m);
+      if (r) {
+        images.set(m.assetId, r.image as CanvasImageSource);
+        imgVersions.push(r.version);
+      } else imgVersions.push("-");
+    }
+    const key = `${ver}:${src.tUs}:${cw}x${ch}:${imgVersions.join(",")}`;
+    if (entry.key !== key) {
+      if (entry.canvas.width !== cw) entry.canvas.width = cw;
+      if (entry.canvas.height !== ch) entry.canvas.height = ch;
+      renderMotion(entry.ctx, comp, src.tUs, { scale, images });
+      entry.key = key;
+    }
+    return { tex: this.upload(`motion:${src.clipId}`, entry.canvas, key), cw: comp.width, ch: comp.height };
+  }
+
   private drawQuad(p: Program, tex: WebGLTexture, matrix: Mat3, uv: Mat3, opacity: number, w: number, h: number): void {
     const gl = this.gl;
     gl.useProgram(p.prog);
@@ -312,6 +356,10 @@ export class Compositor {
     if (src.kind === "text") {
       tex = this.textTexture(src, w, h);
       matrix = this.fullscreen(w, h);
+    } else if (src.kind === "motion") {
+      const m = this.motionTexture(src, layer, provider, w, h);
+      tex = m.tex;
+      matrix = placementMatrix(layer.transform, m.cw, m.ch, w, h);
     } else {
       const img = provider.getImage(src);
       if (!img) return null;

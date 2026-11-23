@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.0 — Phase 4: motion studio
+
+### Added
+
+- Motion studio: compositions with solid, shape, text, image and null layers; keyframes on every number property; parenting; blend modes; alpha, inverted and luma track mattes.
+- Shape layers (rect, ellipse, star, polygon, bezier path) with round corners, gradient fill, stroke, trim paths and repeater.
+- Text animators by character, word or line (offset, opacity, scale, rotation, blur, random order) and 20 text animation presets.
+- Graph editor: value curve, drag keyframes, easing presets and bezier handles (overshoot allowed).
+- Glow, blur and drop shadow; wiggle and keyframe loop.
+- 8 templates with quick-edit fields: 3 lower thirds, 2 logo reveals (with your own logo), cinematic title, subscribe button, callout.
+- Lottie JSON export and import (common subset).
+- "Add to video": a composition becomes a timeline clip that updates live and exports with the video.
+
+### Changed
+
+- Project gains `motionComps`; text clips gain `motionCompId` (defaults keep schema version 1).
+
 ## 0.3.0 — Phase 3: audio studio
 
 ### Added

@@ -1,6 +1,7 @@
 "use client";
 
 import { useStudioUi } from "./StudioScreen";
+import { useMotionUi } from "./MotionScreen";
 import { Icon, type IconName } from "@just-see/ui";
 import { createId, findClip, getAsset, getSequence, isMediaClip, type Project } from "@just-see/schema";
 import { addBgRemoval, autoReframe, addText, deleteSelection, duplicateSelection, freezeFrame, splitAtPlayhead } from "@/lib/actions";
@@ -56,6 +57,16 @@ export function Toolbar({ onImport, onImportMusic }: { onImport: () => void; onI
       { id: "transition", icon: "transition", label: "transition", run: open("transition") },
       { id: "delete", icon: "trash", label: "remove", run: deleteSelection, danger: true },
     ];
+  } else if (loc && loc.clip.kind === "text" && loc.clip.motionCompId) {
+    const compId = loc.clip.motionCompId;
+    tools = [
+      { id: "edit-motion", icon: "animation", label: "motionEdit", run: () => useMotionUi.getState().open(compId) },
+      { id: "effects", icon: "effects", label: "effects", run: open("effects") },
+      { id: "adjust", icon: "adjust", label: "adjust", run: open("adjust") },
+      { id: "split", icon: "split", label: "split", run: splitAtPlayhead },
+      { id: "duplicate", icon: "duplicate", label: "duplicate", run: duplicateSelection },
+      { id: "delete", icon: "trash", label: "delete", run: deleteSelection, danger: true },
+    ];
   } else if (loc && loc.clip.kind === "text") {
     tools = [
       { id: "edit", icon: "text", label: "edit", run: open("text") },
@@ -109,6 +120,7 @@ export function Toolbar({ onImport, onImportMusic }: { onImport: () => void; onI
       { id: "sfx", icon: "volume", label: "soundEffects", run: open("sfx") },
       { id: "auto-duck", icon: "fade", label: "autoDuck", run: () => void autoDuck() },
       { id: "studio", icon: "music", label: "studio", run: () => useStudioUi.getState().open("home") },
+      { id: "motion", icon: "animation", label: "motion", run: () => useMotionUi.getState().open("home") },
       { id: "split", icon: "split", label: "split", run: splitAtPlayhead },
       { id: "canvas", icon: "canvas", label: "canvas", run: open("canvas") },
       { id: "marker", icon: "keyframe", label: "marker", run: addMarker },

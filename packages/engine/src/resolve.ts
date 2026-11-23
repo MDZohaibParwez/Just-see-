@@ -16,6 +16,7 @@ import {
   type Keyframe,
   type Keyframes,
   type MediaClip,
+  type MotionComp,
   type Project,
   type Sequence,
   type TextAnimation,
@@ -61,11 +62,22 @@ export interface TextSource {
   localUs: number;
 }
 
+/** A motion composition shown on the timeline (re-rendered from the comp, so edits are live). */
+export interface MotionSource {
+  kind: "motion";
+  clipId: string;
+  comp: MotionComp;
+  /** Composition time to show. */
+  tUs: number;
+  /** Image layers' pixels, fetched like normal image clips. */
+  images: MediaSource[];
+}
+
 export interface VisualLayer {
   kind: "visual";
   clipId: string;
   trackId: string;
-  source: MediaSource | TextSource;
+  source: MediaSource | TextSource | MotionSource;
   transform: Transform;
   crop: Crop;
   blendMode: BlendMode;
@@ -231,6 +243,30 @@ function mediaLayer(project: Project, clip: MediaClip, trackId: string, t: numbe
   };
 }
 
+function motionLayer(project: Project, clip: TextClip, comp: MotionComp, trackId: string, t: number): VisualLayer {
+  const local = t - clip.startUs;
+  const transform = animatedTransform(clip.transform, clip.keyframes, local);
+  const images: MediaSource[] = [];
+  for (const l of comp.layers) {
+    if (l.type !== "image" || !l.assetId) continue;
+    const a = getAsset(project, l.assetId);
+    if (a && a.kind === "image") images.push({ kind: "image", clipId: `motion:${clip.id}:${a.id}`, assetId: a.id, sourceTimeUs: 0, width: a.width, height: a.height, rotation: 0 });
+  }
+  const anim = textAnimState(clip, local);
+  return {
+    kind: "visual",
+    clipId: clip.id,
+    trackId,
+    source: { kind: "motion", clipId: clip.id, comp, tUs: Math.min(comp.durationUs, Math.max(0, local)), images },
+    transform,
+    crop: NO_CROP,
+    blendMode: clip.blendMode ?? "normal",
+    opacity: transform.opacity * anim.opacity,
+    effects: animatedEffects(clip.effects, clip.keyframes, local),
+    localTime: local / 1e6,
+  };
+}
+
 function textLayer(clip: TextClip, trackId: string, t: number): VisualLayer {
   const local = t - clip.startUs;
   const anim = textAnimState(clip, local);
@@ -297,7 +333,7 @@ export function resolveFrame(project: Project, t: number, sequenceId?: string): 
     const top = active[active.length - 1];
     if (top && isMediaClip(top)) {
       const l = mediaLayer(project, top, main!.id, t);
-      if (l && l.source.kind !== "text") {
+      if (l && (l.source.kind === "video" || l.source.kind === "image")) {
         layers.push(backgroundLayer({ ...l.source, clipId: `bg:${top.id}` }, seq, bg.blur, l.source.clipId));
       }
     }
@@ -329,7 +365,11 @@ export function resolveFrame(project: Project, t: number, sequenceId?: string): 
     }
     for (const clip of track.clips) {
       if (clip.startUs > t || t >= clipEndUs(clip)) continue;
-      if (clip.kind === "text") layers.push(textLayer(clip, track.id, t));
+      if (clip.kind === "text") {
+        const comp = clip.motionCompId ? project.motionComps?.find((c) => c.id === clip.motionCompId) : undefined;
+        if (comp) layers.push(motionLayer(project, clip, comp, track.id, t));
+        else if (!clip.motionCompId) layers.push(textLayer(clip, track.id, t));
+      }
       else {
         const l = mediaLayer(project, clip, track.id, t);
         if (l) layers.push(l);
@@ -415,7 +455,8 @@ export { sequenceDurationUs };
 export function planMediaSources(plan: FramePlan): MediaSource[] {
   const out: MediaSource[] = [];
   const visit = (l: VisualLayer) => {
-    if (l.source.kind !== "text") out.push(l.source);
+    if (l.source.kind === "motion") out.push(...l.source.images);
+    else if (l.source.kind !== "text") out.push(l.source);
   };
   for (const l of plan.layers) {
     if (l.kind === "transition") {

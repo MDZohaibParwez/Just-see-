@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { EffectInstanceSchema, IdSchema, MicrosSchema } from "./base";
 import { AudioSessionSchema } from "./session";
+import { MotionCompSchema } from "./motion";
 
 export { EffectInstanceSchema, IdSchema, MicrosSchema } from "./base";
 export type { EffectInstance } from "./base";
@@ -235,6 +236,9 @@ export const TextClipSchema = z.object({
   words: z.array(z.object({ text: z.string().max(200), startUs: MicrosSchema, endUs: MicrosSchema })).max(2000).default([]),
   /** Caption clips are generated from a transcript and grouped. */
   captionGroup: z.string().max(64).nullable().default(null),
+  // ---- Added in Phase 4 ----
+  /** When set, this clip shows a motion composition instead of its text. */
+  motionCompId: IdSchema.nullable().default(null),
 });
 export type TextClip = z.infer<typeof TextClipSchema>;
 
@@ -304,6 +308,8 @@ export const ProjectSchema = z.object({
   activeSequenceId: IdSchema,
   /** Audio studio sessions (Phase 3). */
   audioSessions: z.array(AudioSessionSchema).max(64).default([]),
+  /** Motion studio compositions (Phase 4). */
+  motionComps: z.array(MotionCompSchema).max(200).default([]),
 });
 export type Project = Omit<z.infer<typeof ProjectSchema>, "sequences"> & { sequences: Sequence[] };
 

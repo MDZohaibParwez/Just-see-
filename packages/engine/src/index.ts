@@ -27,3 +27,7 @@ export * from "./audio/sfx";
 export * from "./audio/duck";
 export * from "./audio/studio";
 export * from "./audio/moods";
+export * from "./motion/eval";
+export * from "./motion/render";
+export * from "./motion/templates";
+export * from "./motion/lottie";

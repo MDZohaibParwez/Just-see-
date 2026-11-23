@@ -81,7 +81,7 @@ describe("resolveFrame", () => {
     expect(plan.layers).toHaveLength(1);
     const l = plan.layers[0];
     expect(l?.kind).toBe("visual");
-    if (l?.kind === "visual" && l.source.kind !== "text") expect(l.source.sourceTimeUs).toBe(S(0.5));
+    if (l?.kind === "visual" && l.source.kind !== "text" && l.source.kind !== "motion") expect(l.source.sourceTimeUs).toBe(S(0.5));
   });
 
   it("builds a transition layer during the overlap", () => {
@@ -92,7 +92,7 @@ describe("resolveFrame", () => {
       expect(tr.progress).toBeCloseTo(0.5, 5);
       expect(tr.from.clipId).toBe("ca");
       expect(tr.to.clipId).toBe("cb");
-      if (tr.to.source.kind !== "text") expect(tr.to.source.sourceTimeUs).toBe(S(0.5));
+      if (tr.to.source.kind !== "text" && tr.to.source.kind !== "motion") expect(tr.to.source.sourceTimeUs).toBe(S(0.5));
     }
   });
 
@@ -109,7 +109,7 @@ describe("resolveFrame", () => {
     let p = reel();
     p = run(p, { type: "clip/setSpeed", payload: { clipId: "ca", speed: 2 } });
     const l = resolveFrame(p, S(1)).layers[0];
-    if (l?.kind === "visual" && l.source.kind !== "text") expect(l.source.sourceTimeUs).toBe(S(2));
+    if (l?.kind === "visual" && l.source.kind !== "text" && l.source.kind !== "motion") expect(l.source.sourceTimeUs).toBe(S(2));
   });
 
   it("is empty past the end", () => {
