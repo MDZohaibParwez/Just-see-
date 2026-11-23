@@ -19,3 +19,6 @@ export * from "./export/gif";
 export * from "./export/zip";
 export * from "./captions/captions";
 export * from "./analysis/reframe";
+export * from "./audio/dsp";
+export * from "./audio/wasm";
+export * from "./audio/fx";
