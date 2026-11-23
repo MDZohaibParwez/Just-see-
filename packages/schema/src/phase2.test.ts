@@ -189,3 +189,31 @@ describe("migration", () => {
     expect(getSequence(parsed).background).toMatchObject({ kind: "color", blur: 0.6, assetId: null });
   });
 });
+
+describe("ripple delete range", () => {
+  it("cuts a range across tracks and closes the gap", async () => {
+    const { createTextClip } = await import("./index");
+    let p = oneClip(10);
+    const text = { ...createTextClip({ id: "t", startUs: S(2), durationUs: S(6) }), words: [
+      { text: "a", startUs: 0, endUs: S(1) },
+      { text: "b", startUs: S(2), endUs: S(3) },
+      { text: "c", startUs: S(4), endUs: S(5) },
+    ] };
+    p = run(p, { type: "clip/add", payload: { clip: text, newTrackId: "tt" } });
+    p = run(p, { type: "timeline/rippleDelete", payload: { startUs: S(4), endUs: S(5), idSeed: "x" } });
+    const clips = main(p);
+    expect(clips.map((c) => [c.startUs, c.durationUs, c.sourceInUs])).toEqual([
+      [0, S(4), 0],
+      [S(4), S(5), S(5)],
+    ]);
+    const tt = getSequence(p).tracks.find((t) => t.type === "text")!;
+    expect(tt.clips.map((c) => [c.startUs, c.durationUs])).toEqual([
+      [S(2), S(2)],
+      [S(4), S(3)],
+    ]);
+    // Word "b" (2–3 s local = 4–5 s timeline) was cut out.
+    const words = tt.clips.flatMap((c) => (c.kind === "text" ? c.words.map((w) => w.text) : []));
+    expect(words).toEqual(["a", "c"]);
+    expect(getSequence(p).tracks.length).toBe(2);
+  });
+});

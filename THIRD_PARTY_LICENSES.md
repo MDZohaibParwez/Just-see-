@@ -16,6 +16,19 @@ GPL/AGPL code is not allowed. Update this file whenever a dependency changes.
 | [mp4box](https://github.com/gpac/mp4box.js) | 2.6.0 | BSD-3-Clause | MP4/MOV demuxing |
 | [mp4-muxer](https://github.com/Vanilagy/mp4-muxer) | 5.2.2 | MIT | MP4 muxing for export |
 | [webm-muxer](https://github.com/Vanilagy/webm-muxer) | 5.1.4 | MIT | WebM muxing for export |
+| [@huggingface/transformers](https://github.com/huggingface/transformers.js) | 4.3.2 | Apache-2.0 | Whisper speech recognition in the browser (auto captions) |
+| [onnxruntime-web](https://github.com/microsoft/onnxruntime) | (via transformers) | MIT | Runs the Whisper model (wasm/WebGPU) |
+| [@mediapipe/tasks-vision](https://github.com/google-ai-edge/mediapipe) | 1.2.3 | Apache-2.0 | Person segmentation (AI background removal) |
+
+### AI models (downloaded at runtime, not bundled)
+
+| Model | Source | License |
+| --- | --- | --- |
+| Whisper base / small (ONNX, timestamped) | huggingface.co/onnx-community | MIT (OpenAI Whisper weights) |
+| Selfie segmenter (float16) | storage.googleapis.com/mediapipe-models | Apache-2.0 |
+
+Node-only packages pulled in by transformers.js (`onnxruntime-node` MIT, `sharp`
+Apache-2.0 with LGPL-3.0 libvips binaries) are never bundled into the web app.
 
 Notes:
 

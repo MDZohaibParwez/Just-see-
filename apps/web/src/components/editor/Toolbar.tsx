@@ -2,7 +2,7 @@
 
 import { Icon, type IconName } from "@just-see/ui";
 import { findClip, isMediaClip } from "@just-see/schema";
-import { addText, deleteSelection, duplicateSelection, freezeFrame, splitAtPlayhead } from "@/lib/actions";
+import { addBgRemoval, addText, deleteSelection, duplicateSelection, freezeFrame, splitAtPlayhead } from "@/lib/actions";
 import { addMarker, cutToBeat, markBeats, removeSilence } from "@/lib/audio-tools";
 import { useEditor, useProject, type Panel } from "@/lib/editor-store";
 import { useT, type MessageKey } from "@/lib/i18n";
@@ -45,6 +45,7 @@ export function Toolbar({ onImport, onImportMusic }: { onImport: () => void; onI
     if (c.kind !== "image" && !c.holdFrame) tools.push({ id: "speed", icon: "speed", label: "speed", run: open("speed") });
     if (c.kind !== "image") tools.push({ id: "volume", icon: "volume", label: "volume", run: open("volume") });
     if (c.kind !== "audio") {
+      tools.push({ id: "remove-bg", icon: "eyeOff", label: "removeBg", run: () => void addBgRemoval(c.id) });
       tools.push({ id: "effects", icon: "effects", label: "effects", run: open("effects") });
       tools.push({ id: "adjust", icon: "adjust", label: "adjust", run: open("adjust") });
       tools.push({ id: "crop", icon: "crop", label: "crop", run: open("crop") });
@@ -69,6 +70,7 @@ export function Toolbar({ onImport, onImportMusic }: { onImport: () => void; onI
     tools = [
       { id: "media", icon: "media", label: "media", run: onImport },
       { id: "text", icon: "text", label: "text", run: addText },
+      { id: "captions", icon: "style", label: "captions", run: open("captions") },
       { id: "music", icon: "music", label: "music", run: onImportMusic },
       { id: "split", icon: "split", label: "split", run: splitAtPlayhead },
       { id: "canvas", icon: "canvas", label: "canvas", run: open("canvas") },

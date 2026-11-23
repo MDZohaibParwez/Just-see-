@@ -12,3 +12,4 @@ playwright-report/
 apps/web/e2e/fixtures/*.mp4
 apps/web/e2e/fixtures/*.mp3
 apps/web/e2e/fixtures/*.m4a
+public/vendor/

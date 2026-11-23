@@ -146,6 +146,14 @@ export const CommandPayloads = {
   }),
   "clip/removeEffect": z.object({ clipId: IdSchema, effectId: IdSchema }),
   "clip/duplicate": z.object({ clipId: IdSchema, newClipId: IdSchema, newTrackId: IdSchema.optional() }),
+  /** Remove a time range from every track and close the gap (transcript edits, filler removal). */
+  "timeline/rippleDelete": z.object({
+    ...SeqRef,
+    startUs: MicrosSchema,
+    endUs: MicrosSchema,
+    /** Prefix for ids of clips created by cutting. */
+    idSeed: z.string().min(1).max(40),
+  }),
   "marker/add": z.object({ ...SeqRef, marker: MarkerSchema }),
   "marker/remove": z.object({ ...SeqRef, markerId: IdSchema }),
   "marker/setBeats": z.object({ ...SeqRef, timesUs: z.array(MicrosSchema).max(5000), idPrefix: z.string().min(1).max(40) }),
@@ -648,6 +656,53 @@ const handlers: { [K in keyof typeof CommandPayloads]: Handler<K> } = {
     }
   },
 
+  "timeline/rippleDelete": (d, p) => {
+    const seq = getSequence(d, p.sequenceId);
+    const s0 = p.startUs;
+    const e0 = p.endUs;
+    if (e0 - s0 < 1000) fail("Range is too short");
+    const gap = e0 - s0;
+    let n = 0;
+    for (const track of seq.tracks) {
+      const out: Clip[] = [];
+      for (const clip of track.clips) {
+        const cs = clip.startUs;
+        const ce = clipEndUs(clip);
+        if (ce <= s0) {
+          out.push(clip);
+          continue;
+        }
+        if (cs >= e0) {
+          if (track.type !== "main") clip.startUs -= gap;
+          out.push(clip);
+          continue;
+        }
+        // Overlaps the range: keep the part before and/or after it.
+        const keepLeft = s0 - cs >= MIN_CLIP_DURATION_US;
+        const keepRight = ce - e0 >= MIN_CLIP_DURATION_US;
+        let right: Clip | null = null;
+        if (keepRight) {
+          right = splitClipAt(clip, e0 - cs, `${p.idSeed}_${n++}`.slice(0, 64));
+        }
+        if (keepLeft) {
+          const tail = splitClipAt(clip, s0 - cs, `${p.idSeed}_${n++}`.slice(0, 64));
+          void tail; // the middle part is dropped
+          out.push(clip);
+        }
+        if (right) {
+          if (isMediaClip(right)) right.transitionIn = null;
+          if (track.type !== "main") right.startUs = s0;
+          out.push(right);
+        }
+      }
+      track.clips = out;
+    }
+    seq.markers = seq.markers
+      .filter((m) => m.timeUs < s0 || m.timeUs >= e0)
+      .map((m) => (m.timeUs >= e0 ? { ...m, timeUs: m.timeUs - gap } : m));
+    for (const t of [...seq.tracks]) dropIfEmpty(seq, t);
+  },
+
   "marker/add": (d, p) => {
     const seq = getSequence(d, p.sequenceId);
     if (seq.markers.some((m) => m.id === p.marker.id)) fail(`Marker id already exists: ${p.marker.id}`);
@@ -796,6 +851,7 @@ export function describeCommand(command: Command): string {
     "clip/removeKeyframe": "Remove keyframe",
     "clip/clearKeyframes": "Clear keyframes",
     "clip/freeze": "Freeze frame",
+    "timeline/rippleDelete": "Cut range",
     "marker/add": "Add marker",
     "marker/remove": "Remove marker",
     "marker/setBeats": "Beat markers",

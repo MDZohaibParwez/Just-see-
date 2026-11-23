@@ -1,10 +1,13 @@
 import { frameToUs, getAsset, type Asset, type Project } from "@just-see/schema";
 import { Compositor, type ResolvedImage, type SourceProvider } from "../gl/compositor";
-import { planMediaSources, resolveAudio, resolveFrame, type MediaSource } from "../resolve";
+import { planMediaSources, resolveAudio, resolveFrame, type MediaSource, type VisualLayer } from "../resolve";
 import { decodeMp4Audio, decodeWithWebAudio, mixSegments, type Pcm } from "../media/audio";
 import { Mp4Demuxer, isMp4Like } from "../media/demux";
 import { VideoFrameReader } from "../media/frame-reader";
 import { parseCubeLut, type Lut3D } from "../media/lut";
+
+/** Computes a person mask for a decoded frame (background removal). */
+export type MaskProvider = (image: TexImageSource) => Promise<ResolvedImage | null>;
 
 export interface MediaLoader {
   /** Original file for an asset (export never uses proxies). */
@@ -74,7 +77,7 @@ export class RenderSession {
     private loader: MediaLoader,
     readonly width: number,
     readonly height: number,
-    opts: { transparent?: boolean } = {},
+    private opts: { transparent?: boolean; maskProvider?: MaskProvider } = {},
   ) {
     this.canvas =
       typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(width, height) : Object.assign(document.createElement("canvas"), { width, height });
@@ -212,7 +215,31 @@ export class RenderSession {
         this.clipSources.delete(clipId);
       }
     }
-    const provider: SourceProvider = { getImage: (s) => resolved.get(s.clipId) ?? null, getLut: (id) => this.luts.get(id) ?? null };
+    // AI masks for clips that remove their background.
+    const masks = new Map<string, ResolvedImage>();
+    if (this.opts.maskProvider) {
+      const wants = new Set<string>();
+      const visit = (l: VisualLayer) => {
+        if (l.source.kind !== "text" && l.effects.some((e) => e.type === "bg-remove")) wants.add(l.source.clipId);
+      };
+      for (const l of plan.layers) {
+        if (l.kind === "transition") {
+          visit(l.from);
+          visit(l.to);
+        } else visit(l);
+      }
+      for (const id of wants) {
+        const img = resolved.get(id);
+        if (!img) continue;
+        const m = await this.opts.maskProvider(img.image);
+        if (m) masks.set(id, m);
+      }
+    }
+    const provider: SourceProvider = {
+      getImage: (s) => resolved.get(s.clipId) ?? null,
+      getLut: (id) => this.luts.get(id) ?? null,
+      getMask: (id) => masks.get(id) ?? null,
+    };
     this.compositor.render(plan, provider);
     return t;
   }

@@ -282,3 +282,19 @@ export async function matchColors(clipId: string, referenceClipId: string): Prom
   else useEditor.getState().dispatch({ type: "clip/addEffect", payload: { clipId, effect: { id: createId("e_"), type: "color-match", enabled: true, params } } });
   useEditor.getState().toast(tr("colorMatched"));
 }
+
+/** Add (or toggle) AI background removal on a clip and start loading the model. */
+export async function addBgRemoval(clipId: string): Promise<void> {
+  const p = committed();
+  const loc = p ? findClip(p, clipId) : undefined;
+  if (!loc) return;
+  const existing = loc.clip.effects.find((e) => e.type === "bg-remove");
+  if (existing) {
+    useEditor.getState().dispatch({ type: "clip/updateEffect", payload: { clipId, effectId: existing.id, enabled: !existing.enabled } });
+    return;
+  }
+  addEffect(clipId, "bg-remove");
+  const { loadSegmenter } = await import("./segment");
+  const seg = await loadSegmenter();
+  if (!seg) useEditor.getState().toast(tr("importFailed"), "error");
+}

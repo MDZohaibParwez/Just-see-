@@ -24,6 +24,25 @@ void main() {
   outColor = texture(uTex, vUv) * uOpacity;
 }`;
 
+/** Source draw with a person mask (background removal). */
+export const QUAD_MASK_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uTex;
+uniform sampler2D uMask;
+uniform float uOpacity;
+uniform float uThreshold;
+uniform float uFeather;
+uniform float uInvert;
+out vec4 outColor;
+void main() {
+  if (vUv.x < 0.0 || vUv.x > 1.0 || vUv.y < 0.0 || vUv.y > 1.0) { outColor = vec4(0.0); return; }
+  float m = texture(uMask, vUv).r;
+  float a = smoothstep(uThreshold - uFeather, uThreshold + uFeather + 0.0001, m);
+  if (uInvert > 0.5) a = 1.0 - a;
+  outColor = texture(uTex, vUv) * a * uOpacity;
+}`;
+
 /** Fullscreen pass: vUv in GL texture space (0,0 bottom-left). */
 export const FULL_VS = `#version 300 es
 in vec2 aPos;

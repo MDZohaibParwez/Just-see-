@@ -47,6 +47,8 @@ export function ExportPanel() {
   if (!project || !seq) return null;
   const duration = sequenceDurationUs(seq);
 
+  const usesBgRemoval = project.sequences.some((sq) => sq.tracks.some((tr) => tr.clips.some((c) => c.effects.some((e) => e.type === "bg-remove" && e.enabled))));
+
   const start = async () => {
     const chosen = sizes.find((s) => s.label === size) ?? sizes[1]!;
     const ctrl = new AbortController();
@@ -62,6 +64,7 @@ export function ExportPanel() {
         format,
         codec,
         transparent,
+        maskProvider: usesBgRemoval ? (await import("@/lib/segment")).maskForExport : undefined,
         videoBitrate: Math.round(base * (quality === "high" ? 1.8 : 1) * (fps > 30 ? 1.5 : 1)),
         signal: ctrl.signal,
         onProgress: (p) => setState({ kind: "running", phase: p.phase, progress: p.progress }),

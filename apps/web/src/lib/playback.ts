@@ -25,6 +25,7 @@ import {
 } from "@just-see/schema";
 import { assetBlob, assetUrl } from "./media";
 import { getLutSync, setLutLoadedListener } from "./luts";
+import { onSegmenterReady, personMask, segmenterSync } from "./segment";
 
 interface VideoSlot {
   el: HTMLVideoElement;
@@ -72,6 +73,7 @@ export class PreviewPlayer {
   private onEnded: () => void;
   private frameCounter = 0;
   lastPlan: FramePlan | null = null;
+  private unsubSeg: () => void = () => undefined;
 
   constructor(canvas: HTMLCanvasElement, cb: { onTime: (us: number) => void; onEnded: () => void }) {
     this.compositor = new Compositor(canvas);
@@ -79,6 +81,7 @@ export class PreviewPlayer {
     this.onEnded = cb.onEnded;
     this.loop = this.loop.bind(this);
     setLutLoadedListener(() => (this.dirty = true));
+    this.unsubSeg = onSegmenterReady(() => (this.dirty = true));
     this.raf = requestAnimationFrame(this.loop);
   }
 
@@ -165,12 +168,43 @@ export class PreviewPlayer {
     const provider: SourceProvider = {
       getImage: (src) => this.imageFor(src.kind, src.clipId, src.assetId),
       getLut: (assetId) => getLutSync(getAsset(project, assetId)),
+      getMask: (clipId) => this.maskFor(clipId),
     };
     try {
       this.compositor.render(plan, provider);
     } catch (e) {
       console.error("Render failed", e);
     }
+  }
+
+  private masks = new Map<string, { key: number | string; mask: ResolvedImage }>();
+
+  private maskFor(clipId: string): ResolvedImage | null {
+    const seg = segmenterSync();
+    if (!seg) return null;
+    const slot = this.video.get(clipId);
+    let image: TexImageSource | null = null;
+    let key: number | string = 0;
+    if (slot && slot.el.readyState >= 2) {
+      image = slot.el;
+      key = this.playing ? this.frameCounter : slot.version;
+    } else {
+      // Photos: look the asset up through the last plan.
+      const layer = this.lastPlan?.layers.find((l) => l.kind === "visual" && l.clipId === clipId);
+      if (layer?.kind === "visual" && layer.source.kind === "image") {
+        const b = this.images.get(layer.source.assetId);
+        if (b && b !== "loading") {
+          image = b;
+          key = layer.source.assetId;
+        }
+      }
+    }
+    if (!image) return null;
+    const hit = this.masks.get(clipId);
+    if (hit && hit.key === key) return hit.mask;
+    const mask = personMask(seg, image);
+    if (mask) this.masks.set(clipId, { key, mask });
+    return mask;
   }
 
   private imageFor(kind: "video" | "image", clipId: string, assetId: string): ResolvedImage | null {
@@ -362,6 +396,7 @@ export class PreviewPlayer {
 
   destroy(): void {
     this.destroyed = true;
+    this.unsubSeg();
     cancelAnimationFrame(this.raf);
     for (const id of [...this.video.keys()]) this.dropVideo(id);
     for (const s of this.audio.values()) {

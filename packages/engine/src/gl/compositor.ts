@@ -4,7 +4,7 @@ import { identity, placementMatrix, scaling, uvRotationMatrix, multiply, transla
 import type { FramePlan, MediaSource, TextSource, VisualLayer } from "../resolve";
 import type { Lut3D } from "../media/lut";
 import { drawText, textRasterKey, type Canvas2D } from "../text/raster";
-import { BLEND_FS, BLEND_MODES, FULL_VS, QUAD_FS, QUAD_VS, effectFragment, transitionFragment } from "./shaders";
+import { BLEND_FS, BLEND_MODES, FULL_VS, QUAD_FS, QUAD_MASK_FS, QUAD_VS, effectFragment, transitionFragment } from "./shaders";
 
 export type GLCanvas = HTMLCanvasElement | OffscreenCanvas;
 
@@ -21,6 +21,8 @@ export interface SourceProvider {
   getImage(source: MediaSource): ResolvedImage | null;
   /** Parsed 3D LUT for a LUT asset, when available. */
   getLut?(assetId: string): Lut3D | null;
+  /** Person mask for a clip's current frame (background removal). */
+  getMask?(clipId: string): ResolvedImage | null;
 }
 
 interface Program {
@@ -55,6 +57,7 @@ export class Compositor {
   private vao: WebGLVertexArrayObject;
   private quadProg: Program;
   private blendProg: Program | null = null;
+  private maskProg: Program | null = null;
   private effectProgs = new Map<string, Program>();
   private transitionProgs = new Map<string, Program>();
   private targets: Target[] = [];
@@ -174,6 +177,11 @@ export class Compositor {
       } catch (e) {
         errors.push(`effect ${t}: ${(e as Error).message}`);
       }
+    }
+    try {
+      if (!this.maskProg) this.maskProg = this.compile(QUAD_VS, QUAD_MASK_FS);
+    } catch (e) {
+      errors.push(`mask: ${(e as Error).message}`);
     }
     try {
       if (!this.blendProg) this.blendProg = this.compile(FULL_VS, BLEND_FS);
@@ -321,8 +329,27 @@ export class Compositor {
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.disable(gl.BLEND);
-    this.drawQuad(this.quadProg, tex, matrix, uv, 1, w, h);
+    const bgFx = src.kind !== "text" ? layer.effects.find((e) => e.type === "bg-remove") : undefined;
+    const mask = bgFx && src.kind !== "text" ? provider.getMask?.(src.clipId) : null;
+    if (bgFx && mask) {
+      if (!this.maskProg) this.maskProg = this.compile(QUAD_VS, QUAD_MASK_FS);
+      const mp = this.maskProg;
+      const mtex = this.upload(`mask:${src.kind === "text" ? "" : src.clipId}`, mask.image, mask.version);
+      gl.useProgram(mp.prog);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, mtex);
+      gl.uniform1i(this.loc(mp, "uMask"), 1);
+      const prm = bgFx.params;
+      gl.uniform1f(this.loc(mp, "uThreshold"), prm.threshold ?? 0.5);
+      gl.uniform1f(this.loc(mp, "uFeather"), prm.feather ?? 0.08);
+      gl.uniform1f(this.loc(mp, "uInvert"), prm.invert ?? 0);
+      gl.activeTexture(gl.TEXTURE0);
+      this.drawQuad(mp, tex, matrix, uv, 1, w, h);
+    } else {
+      this.drawQuad(this.quadProg, tex, matrix, uv, 1, w, h);
+    }
     for (const fx of layer.effects) {
+      if (fx.type === "bg-remove") continue;
       const def = EFFECTS_BY_TYPE.get(fx.type);
       if (!def) continue;
       const prog = this.effectProgram(def);
@@ -548,6 +575,7 @@ export class Compositor {
     }
     for (const p of [...this.effectProgs.values(), ...this.transitionProgs.values(), this.quadProg]) gl.deleteProgram(p.prog);
     if (this.blendProg) gl.deleteProgram(this.blendProg.prog);
+    if (this.maskProg) gl.deleteProgram(this.maskProg.prog);
     for (const l of this.luts.values()) gl.deleteTexture(l.tex);
     if (this.dummyLut) gl.deleteTexture(this.dummyLut);
     this.luts.clear();

@@ -3,7 +3,7 @@ import { ArrayBufferTarget as WebmTarget, Muxer as WebmMuxer } from "webm-muxer"
 import { getSequence, sequenceDurationUs, type Project } from "@just-see/schema";
 import { defaultVideoBitrate, pickAudioCodec, pickVideoCodec, type MuxVideoCodec } from "./codecs";
 import { GifEncoder } from "./gif";
-import { RenderSession, checkAbort, type MediaLoader } from "./session";
+import { RenderSession, checkAbort, type MaskProvider, type MediaLoader } from "./session";
 import { ZipWriter } from "./zip";
 
 export type { MediaLoader } from "./session";
@@ -21,6 +21,8 @@ export interface ExportOptions {
   audioBitrate?: number;
   /** PNG sequence only: keep the canvas transparent. */
   transparent?: boolean;
+  /** Person masks for background removal. */
+  maskProvider?: MaskProvider;
   signal?: AbortSignal;
   onProgress?: (p: { phase: "prepare" | "audio" | "video" | "finalize"; progress: number }) => void;
 }
@@ -132,7 +134,7 @@ export async function exportVideo(project: Project, loader: MediaLoader, opts: E
     };
   }
 
-  const session = new RenderSession(project, loader, width, height);
+  const session = new RenderSession(project, loader, width, height, { maskProvider: opts.maskProvider });
   try {
     if (audio) {
       progress({ phase: "audio", progress: 0 });
@@ -192,7 +194,7 @@ export const exportMp4 = (project: Project, loader: MediaLoader, opts: ExportOpt
 export async function exportGif(project: Project, loader: MediaLoader, opts: ExportOptions): Promise<ExportResult> {
   const { durationUs, width, height, totalFrames, progress } = prepare(project, opts);
   progress({ phase: "prepare", progress: 0 });
-  const session = new RenderSession(project, loader, width, height);
+  const session = new RenderSession(project, loader, width, height, { maskProvider: opts.maskProvider });
   const gif = new GifEncoder(width, height);
   try {
     for (let i = 0; i < totalFrames; i++) {
@@ -215,7 +217,7 @@ export async function exportGif(project: Project, loader: MediaLoader, opts: Exp
 export async function exportPngSequence(project: Project, loader: MediaLoader, opts: ExportOptions): Promise<ExportResult> {
   const { durationUs, width, height, totalFrames, progress } = prepare(project, opts);
   progress({ phase: "prepare", progress: 0 });
-  const session = new RenderSession(project, loader, width, height, { transparent: opts.transparent ?? true });
+  const session = new RenderSession(project, loader, width, height, { transparent: opts.transparent ?? true, maskProvider: opts.maskProvider });
   const zip = new ZipWriter();
   const digits = String(totalFrames).length + 1;
   try {

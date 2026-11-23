@@ -6,6 +6,7 @@ import { startAutosave } from "@/lib/autosave";
 import { useEditor } from "@/lib/editor-store";
 import { useT } from "@/lib/i18n";
 import { ExportPanel } from "./ExportPanel";
+import { CaptionsPanel } from "./CaptionsPanel";
 import {
   AdjustPanel,
   AnimationPanel,
@@ -58,6 +59,8 @@ function ActivePanel() {
       return <AdjustPanel />;
     case "crop":
       return <CropPanel />;
+    case "captions":
+      return <CaptionsPanel />;
     case "canvas":
       return <CanvasPanel />;
     case "export":

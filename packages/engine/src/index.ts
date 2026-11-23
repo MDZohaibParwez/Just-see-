@@ -17,3 +17,4 @@ export * from "./analysis/beats";
 export * from "./export/session";
 export * from "./export/gif";
 export * from "./export/zip";
+export * from "./captions/captions";

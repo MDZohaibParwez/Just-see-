@@ -30,6 +30,7 @@ export type Panel =
   | "animation"
   | "adjust"
   | "crop"
+  | "captions"
   | "canvas"
   | "export"
   | "history"

@@ -262,6 +262,14 @@ const colorTools: EffectDef[] = [
 // ---------- Keying & masks ----------
 const keying: EffectDef[] = [
   {
+    type: "bg-remove",
+    label: "Remove background (AI)",
+    category: "key",
+    params: [p("threshold", "Threshold", 0.05, 0.95, 0.5), p("feather", "Edge softness", 0, 0.3, 0.08), p("invert", "Keep background", 0, 1, 0, 1)],
+    // Applied while drawing the source with the AI mask; this pass is a no-op.
+    glsl: `vec4 effect(vec2 uv){ return src(uv); }`,
+  },
+  {
     type: "chroma-key",
     label: "Chroma key",
     category: "key",
