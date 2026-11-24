@@ -11,5 +11,15 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   // Routes rewrite /api/<path> to /api?__path=<path>.
   const p = url.searchParams.get("__path");
   const pathname = p !== null ? `/api/${p}` : url.pathname;
-  await handle(req, res, { store: storeFromEnv(apiBase), webBase, apiBase }, pathname);
+  let store;
+  try {
+    store = storeFromEnv(apiBase);
+  } catch (e) {
+    res.statusCode = 503;
+    res.setHeader("content-type", "application/json");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.end(JSON.stringify({ error: (e as Error).message }));
+    return;
+  }
+  await handle(req, res, { store, webBase, apiBase }, pathname);
 }

@@ -99,8 +99,17 @@ export class BlobStore implements Store {
   }
 }
 
+export class StorageNotConfigured extends Error {
+  status = 503;
+  constructor() {
+    super("Online storage is not set up yet (connect a Vercel Blob store to the API project). Editing on the device still works.");
+  }
+}
+
 export function storeFromEnv(publicBase: string): Store {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
   if (token) return new BlobStore(token);
+  // On Vercel the disk is read-only: without Blob there is nowhere to keep files.
+  if (process.env.VERCEL) throw new StorageNotConfigured();
   return new FsStore(process.env.JUST_SEE_STORE_DIR ?? path.join(process.cwd(), ".store"), publicBase);
 }
