@@ -104,6 +104,25 @@ export async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx
       return send(res, 200, json);
     }
 
+    // Crash report the user chose to send (kept 30 days like everything else).
+    if (route === "report" && req.method === "POST" && !id) {
+      const b = await readJson<Record<string, unknown>>(req);
+      const str = (k: string, n: number) => String(b[k] ?? "").slice(0, n);
+      if (!str("message", 500)) return send(res, 400, { error: "Empty report" });
+      const rid = newId(10);
+      await ctx.store.putJson(`reports/${rid}.json`, {
+        id: rid,
+        receivedAt: Date.now(),
+        message: str("message", 500),
+        stack: str("stack", 4000),
+        where: str("where", 200),
+        version: str("version", 20),
+        browser: str("browser", 200),
+        note: str("note", 1000),
+      });
+      return send(res, 200, { id: rid });
+    }
+
     // Share links: a backup file stored online.
     if (route === "share") {
       if (req.method === "POST" && !id) {

@@ -4,6 +4,7 @@
 import { CAPTION_STYLES, MOODS, REEL_STYLE_BY_ID, captionCommands, groupCaptions, moodSession, type CaptionLanguage, type Mood } from "@just-see/engine";
 import { clipEndUs, createId, getSequence, type Command, type MediaClip, type Project } from "@just-see/schema";
 import { useEditor } from "./editor-store";
+import { track } from "./telemetry";
 
 const S = 1_000_000;
 
@@ -51,6 +52,7 @@ export async function addAutoCaptions(language = "auto", styleId = "clean"): Pro
 export async function applyStyle(styleId: string, fields: Record<string, string> = {}, opts: { music?: boolean; captions?: boolean } = {}): Promise<string[]> {
   const style = REEL_STYLE_BY_ID.get(styleId);
   if (!style) throw new Error(`Unknown style ${styleId}`);
+  track(`style:${styleId}`);
   const s = useEditor.getState();
   const val = (key: string) => fields[key] ?? style.fields.find((f) => f.key === key)?.default ?? "";
   const done: string[] = [];

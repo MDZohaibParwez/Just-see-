@@ -12,6 +12,7 @@ import { onLocalCommand, useEditor } from "./editor-store";
 import { getMedia, putMedia } from "./storage/media-store";
 import { saveProject } from "./storage/db";
 import { invalidateAsset } from "./media";
+import { track } from "./telemetry";
 
 type DataConnection = import("peerjs").DataConnection;
 type PeerT = import("peerjs").Peer;
@@ -258,6 +259,7 @@ async function newPeer(id?: string): Promise<PeerT> {
 
 /** Start hosting the open project. Returns the invite link. */
 export async function startHosting(): Promise<string> {
+  track("live-host");
   await stopLive();
   const room = createId("").replace(/[^a-z0-9]/gi, "").slice(0, 10).toLowerCase();
   useLive.setState({ role: "host", room, status: "connecting", error: "", peers: [] });

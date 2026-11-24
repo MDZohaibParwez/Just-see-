@@ -113,4 +113,14 @@ describe("connector (MCP)", () => {
     const traversal = await fetch(`${apiBase}/files/../package.json`);
     expect(traversal.status).not.toBe(200);
   });
+
+  it("stores a crash report the user chose to send", async () => {
+    const empty = await fetch(`${apiBase}/api/report`, { method: "POST", body: JSON.stringify({}) });
+    expect(empty.status).toBe(400);
+    const r = (await (await fetch(`${apiBase}/api/report`, { method: "POST", body: JSON.stringify({ message: "x is undefined", stack: "at a", version: "0.7.0", note: "exporting" }) })).json()) as { id: string };
+    expect(r.id).toMatch(/^[a-z0-9]+$/);
+    const saved = (await (await fetch(`${apiBase}/files/reports/${r.id}.json`)).json()) as { message: string; note: string };
+    expect(saved.message).toBe("x is undefined");
+    expect(saved.note).toBe("exporting");
+  });
 });

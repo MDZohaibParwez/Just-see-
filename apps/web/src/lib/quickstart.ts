@@ -6,6 +6,7 @@
 import { getSequence, sequenceDurationUs } from "@just-see/schema";
 import { importFiles } from "./actions";
 import { currentProject, useEditor } from "./editor-store";
+import { track } from "./telemetry";
 
 const committed = () => currentProject(useEditor.getState());
 
@@ -26,6 +27,7 @@ const MAX_SEC = 30;
 
 export async function buildQuickReel(files: File[], mood = "upbeat"): Promise<void> {
   if (!files.length) return;
+  track("quick-reel");
   await importFiles(files, "media");
   const p = committed();
   if (!p) return;

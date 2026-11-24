@@ -18,6 +18,7 @@ import { currentProject, useEditor } from "./editor-store";
 import { importFile, kindOf } from "./media";
 import { haptic } from "./theme";
 import { translate, useLocale } from "./i18n";
+import { track } from "./telemetry";
 
 const tr = (k: Parameters<typeof translate>[1]) => translate(useLocale.getState().locale, k);
 
@@ -31,6 +32,7 @@ export async function importFiles(files: FileList | File[], mode: "media" | "mus
   const list = Array.from(files);
   if (!list.length) return;
   store.toast(tr("importing"));
+  track(mode === "overlay" ? "import-overlay" : "import");
   for (const file of list) {
     const kind = kindOf(file);
     if (!kind || (mode === "music" && kind !== "audio")) {

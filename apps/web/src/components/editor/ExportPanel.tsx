@@ -8,6 +8,7 @@ import { useEditor, useProject } from "@/lib/editor-store";
 import { mediaLoader } from "@/lib/media";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { Chip, Sheet } from "./controls";
+import { track } from "@/lib/telemetry";
 
 type State =
   | { kind: "idle" }
@@ -73,6 +74,7 @@ export function ExportPanel() {
       const url = URL.createObjectURL(res.blob);
       const safe = project.name.replace(/[^\p{L}\p{N} _-]/gu, "").trim() || "video";
       const secs = ((performance.now() - started) / 1000).toFixed(1);
+      track("export");
       setState({
         kind: "done",
         url,

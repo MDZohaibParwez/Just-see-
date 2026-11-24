@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { ProblemsPanel } from "@/components/ProblemsPanel";
 import { Compositor, EFFECTS, TRANSITIONS, defaultParams, pickAudioCodec, pickVideoCodec, type FramePlan, type VisualLayer } from "@just-see/engine";
 import { DEFAULT_TRANSFORM, NO_CROP } from "@just-see/schema";
 
@@ -162,6 +163,7 @@ export default function Diagnostics() {
         </dl>
       )}
       <SpeedTest />
+      <ProblemsPanel />
     </main>
   );
 }
