@@ -219,6 +219,8 @@ pnpm test:e2e     # Playwright (builds needed first: pnpm build)
 
 ## Roadmap
 
+> ⚠️ Set up for personal use right now (clips deleted early, free 1 GB storage). See [Before going public](docs/before-going-public.md).
+
 Phases are built strictly in order. A phase is done only when its check passes.
 
 | # | Phase | Done when | Status |

@@ -13,7 +13,7 @@ type View =
   | { kind: "loading" }
   | { kind: "working"; label: string; progress: number }
   | { kind: "done"; url: string; local: string; projectId: string }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; projectId?: string };
 
 /** Opened from the connector's render link: builds the video here and uploads it. */
 function Renderer() {
@@ -29,6 +29,7 @@ function Renderer() {
     started.current = true;
     const report = (status: string, extra: Record<string, unknown> = {}) =>
       apiJson(`/api/jobs/${job}/status`, { method: "POST", body: JSON.stringify({ key, status, ...extra }) }).catch(() => undefined);
+    let builtId = "";
     void (async () => {
       try {
         const info = await apiJson<Omit<RenderJob, "token">>(`/api/jobs/${job}`);
@@ -40,6 +41,9 @@ function Renderer() {
         await report("rendering");
         const { buildRecipe } = await import("@/lib/recipe-run");
         const project = await buildRecipe(recipe, (s) => setView({ kind: "working", label: s.label, progress: (s.done / Math.max(1, s.total)) * 0.4 }));
+        builtId = project.id;
+        // Every clip is now on this device: the online copies can go.
+        await apiJson(`/api/jobs/${job}/loaded`, { method: "POST", body: JSON.stringify({ key }) }).catch(() => undefined);
         await (await import("@/lib/fonts")).ensureProjectFonts(project);
         const seq = getSequence(project);
         const sizes = exportSizes(seq.width, seq.height);
@@ -60,7 +64,8 @@ function Renderer() {
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         await report("failed", { error: message.slice(0, 1900) });
-        setView({ kind: "error", message });
+        // The project is saved on this device, so it can still be finished in the editor.
+        setView({ kind: "error", message, projectId: builtId || undefined });
       }
     })();
   }, [job, key, t]);
@@ -93,9 +98,16 @@ function Renderer() {
         </div>
       )}
       {view.kind === "error" && (
-        <p className="rounded-xl bg-danger/15 p-3 text-sm text-danger" role="alert" data-testid="render-error">
-          {view.message}
-        </p>
+        <>
+          <p className="rounded-xl bg-danger/15 p-3 text-sm text-danger" role="alert" data-testid="render-error">
+            {view.message}
+          </p>
+          {view.projectId && (
+            <Link href={`/edit/?id=${encodeURIComponent(view.projectId)}`} className="rounded-xl border border-line py-3 text-center text-sm" data-testid="render-open-local">
+              {t("openInEditor")}
+            </Link>
+          )}
+        </>
       )}
     </main>
   );

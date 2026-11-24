@@ -85,6 +85,11 @@ describe("connector (MCP)", () => {
     const key = /key=([A-Za-z0-9_-]+)/.exec(render)![1]!;
     const wrong = await fetch(`${apiBase}/api/jobs/${job}/status`, { method: "POST", body: JSON.stringify({ key: "x", status: "done" }) });
     expect(wrong.status).toBe(403);
+    // Personal mode: once the render page has the clips, the online copies go at once.
+    expect(fs.readdirSync(path.join(dir, "media", id)).length).toBe(3);
+    const loaded = (await (await fetch(`${apiBase}/api/jobs/${job}/loaded`, { method: "POST", body: JSON.stringify({ key }) })).json()) as { deleted: number };
+    expect(loaded.deleted).toBe(3);
+    expect(fs.existsSync(path.join(dir, "media", id))).toBe(false);
     const ok = await fetch(`${apiBase}/api/jobs/${job}/status`, { method: "POST", body: JSON.stringify({ key, status: "done", url: `${apiBase}/files/renders/${job}.mp4` }) });
     expect(ok.status).toBe(200);
     expect(textOf(await c.callTool({ name: "get_render", arguments: { job_id: job } }))).toContain(`Download: ${apiBase}/files/renders/${job}.mp4`);
@@ -101,6 +106,7 @@ describe("connector (MCP)", () => {
     const render = textOf(await c.callTool({ name: "render_video", arguments: { video_id: id, keep_media: true } }));
     const job = /Render job ([a-z0-9]+)/.exec(render)![1]!;
     const key = /key=([A-Za-z0-9_-]+)/.exec(render)![1]!;
+    await fetch(`${apiBase}/api/jobs/${job}/loaded`, { method: "POST", body: JSON.stringify({ key }) });
     await fetch(`${apiBase}/api/jobs/${job}/status`, { method: "POST", body: JSON.stringify({ key, status: "done", url: `${apiBase}/files/renders/${job}.mp4` }) });
     expect(fs.readdirSync(path.join(dir, "media", id))).toHaveLength(1);
     expect(textOf(await c.callTool({ name: "delete_video", arguments: { video_id: id } }))).toContain("1 clip");

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.3 — Personal mode: delete clips as early as possible
+
+### Changed
+
+- **Personal mode (on now):** once the render page has copied every clip to the device, the online copies are deleted straight away, before the render finishes. If a render then fails, the project still opens in the editor on that device. Turn off with `JUST_SEE_EAGER_DELETE=0`.
+- `docs/before-going-public.md`: the list of personal-use settings to change before the app goes public.
+
 ## 0.7.2 — Connector: files up to 900 MB, server stays safe
 
 ### Changed

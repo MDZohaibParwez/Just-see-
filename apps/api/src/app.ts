@@ -48,6 +48,26 @@ function isOurUrl(ctx: Ctx, url: string): boolean {
   return url.startsWith(ctx.store.urlOf("x").slice(0, -1));
 }
 
+/**
+ * PERSONAL MODE (before going public, see docs/before-going-public.md):
+ * clips are deleted as soon as the render page has them. Set
+ * JUST_SEE_EAGER_DELETE=0 to keep them until the MP4 is saved.
+ */
+export function eagerDelete(): boolean {
+  return process.env.JUST_SEE_EAGER_DELETE !== "0";
+}
+
+/** Delete a render job's source clips (connector downloads and upload-page files). */
+async function deleteJobMedia(ctx: Ctx, job: RenderJob): Promise<number> {
+  let n = await ctx.store.deletePrefix(`media/${job.recipeId}/`).catch(() => 0);
+  const r = await loadRecipe(ctx.store, job.recipeId);
+  for (const m of r?.media ?? []) {
+    const p = isOurUrl(ctx, m.url) ? decodeURIComponent(new URL(m.url).pathname.replace(/^\/(files\/)?/, "")) : "";
+    if (p.startsWith("uploads/")) n += await ctx.store.deletePrefix(assertSafePath(p)).catch(() => 0);
+  }
+  return n;
+}
+
 export async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx, pathname: string): Promise<void> {
   cors(res);
   if (req.method === "OPTIONS") {
@@ -78,7 +98,7 @@ export async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx
     const [, route, id, sub] = parts;
 
     if (route === undefined || route === "" || route === "config") {
-      return send(res, 200, { app: "just-see-api", version: "0.6.0", storage: ctx.store.mode, web: ctx.webBase });
+      return send(res, 200, { app: "just-see-api", version: "0.7.3", storage: ctx.store.mode, web: ctx.webBase, personalMode: eagerDelete() });
     }
 
     // Direct browser uploads: Vercel Blob client tokens, or a PUT URL in local mode.
@@ -163,6 +183,14 @@ export async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx
         void _t;
         return send(res, 200, pub);
       }
+      // Personal mode: the render page has copied every clip to the device, so
+      // the online copies go right away instead of after the render.
+      if (req.method === "POST" && sub === "loaded") {
+        const b = await readJson<{ key?: string }>(req);
+        if (b.key !== job.token) return send(res, 403, { error: "Wrong key" });
+        const deleted = job.deleteMedia && eagerDelete() ? await deleteJobMedia(ctx, job) : 0;
+        return send(res, 200, { ok: true, deleted });
+      }
       if (req.method === "POST" && sub === "status") {
         const b = await readJson<{ key?: string; status?: string; url?: string; error?: string }>(req);
         if (b.key !== job.token) return send(res, 403, { error: "Wrong key" });
@@ -170,15 +198,7 @@ export async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx
         const next = RenderJobSchema.parse({ ...job, status: b.status ?? job.status, outputUrl: b.url ?? job.outputUrl, error: b.error ?? null, updatedAt: Date.now() });
         await ctx.store.putJson(`jobs/${id}.json`, next);
         // The MP4 is saved: the source clips are no longer needed online.
-        if (next.status === "done" && job.status !== "done" && next.deleteMedia) {
-          await ctx.store.deletePrefix(`media/${job.recipeId}/`).catch(() => 0);
-          // Clips added through the upload page live under uploads/.
-          const r = await loadRecipe(ctx.store, job.recipeId);
-          for (const m of r?.media ?? []) {
-            const p = isOurUrl(ctx, m.url) ? decodeURIComponent(new URL(m.url).pathname.replace(/^\/(files\/)?/, "")) : "";
-            if (p.startsWith("uploads/")) await ctx.store.deletePrefix(assertSafePath(p)).catch(() => 0);
-          }
-        }
+        if (next.status === "done" && job.status !== "done" && next.deleteMedia) await deleteJobMedia(ctx, job);
         return send(res, 200, { ok: true });
       }
     }

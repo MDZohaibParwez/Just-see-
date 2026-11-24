@@ -122,3 +122,27 @@ test("share a copy: link opens the same project on another device", async ({ pag
   await expect.poll(() => p2.getByTestId("track-main").getByTestId("timeline-clip").count()).toBe(2);
   await other.close();
 });
+
+test("personal mode: clips leave online storage as soon as the render page has them", async ({ page, request }) => {
+  test.setTimeout(4 * 60 * 1000);
+  const claude = new Client({ name: "claude-test", version: "1" });
+  await claude.connect(new StreamableHTTPClientTransport(new URL(`${API}/api/mcp/dev`)));
+  const id = /Created video ([a-z0-9]+)/.exec(textOf(await claude.callTool({ name: "create_video", arguments: {} })))![1]!;
+  const m = /Added video (m\w+)/.exec(textOf(await claude.callTool({ name: "add_media", arguments: { video_id: id, url: `${fileBase}/clip1.mp4` } })))![1]!;
+  await claude.callTool({ name: "add_clip", arguments: { video_id: id, media_id: m, end: 3 } });
+  const render = textOf(await claude.callTool({ name: "render_video", arguments: { video_id: id, resolution: "720p" } }));
+  const link = /(http:\/\/localhost:4173\/render\/\?[^\s]+)/.exec(render)![1]!;
+  const recipe = (await (await request.get(`${API}/api/recipes/${id}`)).json()) as { recipe: { media: { url: string }[] } };
+  const clipUrl = recipe.recipe.media[0]!.url;
+  expect((await request.get(clipUrl)).ok()).toBe(true);
+
+  // The clip is deleted before the render finishes; the render still completes from the device copy.
+  const loaded = page.waitForResponse((r) => r.url().includes(`/loaded`) && r.request().method() === "POST");
+  await page.goto(link);
+  expect((await (await loaded).json()).deleted).toBe(1);
+  expect((await request.get(clipUrl)).status()).toBe(404);
+  await expect(page.getByTestId("render-done")).toBeVisible({ timeout: 3 * 60 * 1000 });
+  const job = /Render job ([a-z0-9]+)/.exec(render)![1]!;
+  expect(textOf(await claude.callTool({ name: "get_render", arguments: { job_id: job } }))).toContain("Download:");
+  await claude.close();
+});
