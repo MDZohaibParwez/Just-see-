@@ -1,7 +1,7 @@
 "use client";
 
+import { useStudioUi } from "@/lib/ui-stores";
 import { useEffect, useMemo, useState } from "react";
-import { create } from "zustand";
 import { AUDIO_FX, DRUM_KITS, MOODS, SYNTH_PRESETS, moodSession, type Mood } from "@just-see/engine";
 import { DRUM_PADS, SCALES, chordNotes, createId, inScale, type AudioSession, type Instrument, type StudioTrack } from "@just-see/schema";
 import { Icon } from "@just-see/ui";
@@ -27,10 +27,7 @@ import {
 import { Chip } from "./controls";
 
 /** Which studio session is open ("home" = session picker). */
-export const useStudioUi = create<{ openId: string | null; open(id: string | null): void }>((set) => ({
-  openId: null,
-  open: (openId) => set({ openId }),
-}));
+export { useStudioUi };
 
 const NO_ASSETS: never[] = [];
 const NO_SESSIONS: AudioSession[] = [];

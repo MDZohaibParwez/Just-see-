@@ -26,7 +26,7 @@ function committed() {
 }
 
 /** Import files: video/images go on the main track after the playhead clip, audio onto an audio track. */
-export async function importFiles(files: FileList | File[], mode: "media" | "music" = "media"): Promise<void> {
+export async function importFiles(files: FileList | File[], mode: "media" | "music" | "overlay" = "media"): Promise<void> {
   const store = useEditor.getState();
   const list = Array.from(files);
   if (!list.length) return;
@@ -49,6 +49,11 @@ export async function importFiles(files: FileList | File[], mode: "media" | "mus
       if (kind === "audio") {
         clip.startUs = t;
         commands.push({ type: "clip/add", payload: { clip, trackType: "audio", newTrackId: createId("t_") } });
+      } else if (mode === "overlay") {
+        // Picture-in-picture: a new layer above the video at the playhead, half size.
+        clip.startUs = t;
+        clip.transform = { ...clip.transform, scale: 0.5 };
+        commands.push({ type: "clip/add", payload: { clip, trackType: "video", newTrackId: createId("t_") } });
       } else {
         // Insert after the clip under the playhead (or at the end).
         const under = clipAt(main, t);
@@ -56,7 +61,7 @@ export async function importFiles(files: FileList | File[], mode: "media" | "mus
         commands.push({ type: "clip/add", payload: { clip, trackId: main.id, index } });
       }
       useEditor.getState().dispatch({ type: "batch", payload: { label: "Import media", commands } });
-      if (kind !== "audio") {
+      if (kind !== "audio" && mode !== "overlay") {
         const after = committed();
         const placed = after ? findClip(after, clip.id) : undefined;
         if (placed) useEditor.getState().setPlayhead(placed.clip.startUs);

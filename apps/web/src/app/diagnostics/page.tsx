@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Compositor, EFFECTS, TRANSITIONS, defaultParams, pickAudioCodec, pickVideoCodec, type FramePlan, type VisualLayer } from "@just-see/engine";
 import { DEFAULT_TRANSFORM, NO_CROP } from "@just-see/schema";
@@ -15,6 +15,37 @@ interface Report {
   renderErrors: string[];
   effects: number;
   transitions: number;
+}
+
+function SpeedTest() {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const [state, setState] = useState<"idle" | "running" | "done">("idle");
+  const [result, setResult] = useState<import("@/lib/speed-test").SpeedResult | null>(null);
+  const run = async () => {
+    if (!ref.current) return;
+    setState("running");
+    const { runSpeedTest } = await import("@/lib/speed-test");
+    const r = await runSpeedTest(ref.current);
+    setResult(r);
+    setState("done");
+  };
+  return (
+    <section className="mt-6" aria-labelledby="speed-h">
+      <h2 id="speed-h" className="mb-2 text-lg font-semibold">
+        Speed test
+      </h2>
+      <p className="mb-2 text-sm text-muted">1080p preview with 3 video layers and an effect, like a real edit. Takes 4 seconds.</p>
+      <button type="button" data-testid="speed-run" disabled={state === "running"} onClick={() => void run()} className="mb-2 h-11 rounded-xl bg-accent px-4 text-accent-contrast disabled:opacity-60">
+        {state === "running" ? "Testing…" : "Run speed test"}
+      </button>
+      <canvas ref={ref} className="mx-auto block h-40 w-auto rounded-lg bg-black" aria-hidden="true" />
+      {result && (
+        <p className="mt-2 text-sm" role="status" data-testid="speed-result" data-fps={result.fps.toFixed(1)} data-pass={result.pass ? "1" : "0"}>
+          {result.pass ? "✅" : "⚠️"} {result.fps.toFixed(0)} fps (goal 30) · {result.renderMs.toFixed(1)} ms per frame · GPU: {result.gpu}
+        </p>
+      )}
+    </section>
+  );
 }
 
 /** Device check page: shows what this browser supports. Also used by tests. */
@@ -130,6 +161,7 @@ export default function Diagnostics() {
           <dd>{report.shaderErrors.length === 0 ? "none" : <pre className="whitespace-pre-wrap text-danger">{report.shaderErrors.join("\n")}</pre>}</dd>
         </dl>
       )}
+      <SpeedTest />
     </main>
   );
 }

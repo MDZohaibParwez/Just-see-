@@ -38,6 +38,8 @@ interface VideoSlot {
   version: number;
   ready: boolean;
   lastUsed: number;
+  /** True when the browser tells us about each new video frame, so unchanged frames are not re-uploaded. */
+  frameEvents: boolean;
 }
 
 interface AudioSlot {
@@ -77,6 +79,8 @@ export class PreviewPlayer {
   private onEnded: () => void;
   private frameCounter = 0;
   lastPlan: FramePlan | null = null;
+  /** Performance numbers for the perf tests and the diagnostics page. */
+  private perf = { renderMs: [] as number[], frameGapMs: [] as number[], seekMs: [] as number[], lastFrameAt: 0, seekAt: 0 };
   private unsubSeg: () => void = () => undefined;
 
   constructor(canvas: HTMLCanvasElement, cb: { onTime: (us: number) => void; onEnded: () => void }) {
@@ -95,9 +99,28 @@ export class PreviewPlayer {
     return this.compositor.canvas as HTMLCanvasElement;
   }
 
+  // Adaptive preview quality: on a slow phone, playback renders at a lower
+  // resolution so it stays smooth; full quality comes back on pause.
+  private baseW = 0;
+  private baseH = 0;
+  private quality = 1;
+  private renderEma = 0;
+
   resize(w: number, h: number): void {
-    this.compositor.resize(w, h);
+    this.baseW = w;
+    this.baseH = h;
+    this.applyQuality(this.playing ? this.quality : 1);
+  }
+
+  private applyQuality(q: number): void {
+    if (!this.baseW) return;
+    this.compositor.resize(this.baseW * q, this.baseH * q);
     this.dirty = true;
+  }
+
+  /** Current playback render scale (1 = full). */
+  get previewQuality(): number {
+    return this.playing ? this.quality : 1;
   }
 
   setProject(p: Project): void {
@@ -108,6 +131,7 @@ export class PreviewPlayer {
 
   /** Jump to a time (used while paused / scrubbing). */
   seek(us: number): void {
+    if (!this.perf.seekAt) this.perf.seekAt = performance.now();
     this.timeUs = us;
     if (this.playing) {
       this.playStartUs = us;
@@ -126,6 +150,8 @@ export class PreviewPlayer {
     const dur = sequenceDurationUs(getSequence(this.project));
     if (this.timeUs >= dur - 10_000) this.timeUs = 0;
     this.playing = true;
+    this.renderEma = 0;
+    if (this.quality < 1) this.applyQuality(this.quality);
     this.playStartUs = this.timeUs;
     this.playStartWall = performance.now();
     // Start elements now, inside the user gesture, so mobile browsers allow sound.
@@ -133,7 +159,9 @@ export class PreviewPlayer {
   }
 
   pause(): void {
+    const wasPlaying = this.playing;
     this.playing = false;
+    if (wasPlaying && this.quality < 1) this.applyQuality(1);
     for (const s of this.video.values()) s.el.pause();
     for (const s of this.audio.values()) s.el.pause();
     this.dirty = true;
@@ -169,7 +197,64 @@ export class PreviewPlayer {
     }
   }
 
+  stats(): { frames: number; fps: number; renderP95Ms: number; seekP95Ms: number; seekMaxMs: number; droppedPct: number; quality: number; renders: number } {
+    const p95 = (a: number[]) => {
+      if (!a.length) return 0;
+      const s = [...a].sort((x, y) => x - y);
+      return s[Math.min(s.length - 1, Math.floor(s.length * 0.95))]!;
+    };
+    const gaps = this.perf.frameGapMs;
+    const total = gaps.reduce((a, b) => a + b, 0);
+    // A frame "drops" when the gap is over 1.5× a 30 fps frame.
+    const dropped = gaps.filter((g) => g > 50).length;
+    return {
+      frames: gaps.length,
+      fps: total > 0 ? (gaps.length * 1000) / total : 0,
+      renderP95Ms: p95(this.perf.renderMs),
+      seekP95Ms: p95(this.perf.seekMs),
+      seekMaxMs: Math.max(0, ...this.perf.seekMs),
+      quality: this.quality,
+      renders: this.perf.renderMs.length,
+      droppedPct: gaps.length ? (100 * dropped) / gaps.length : 0,
+    };
+  }
+
+  resetStats(): void {
+    this.perf = { renderMs: [], frameGapMs: [], seekMs: [], lastFrameAt: 0, seekAt: 0 };
+  }
+
   private render(t: number): void {
+    if (!this.project) return;
+    const t0 = performance.now();
+    this.renderInner(t);
+    const now = performance.now();
+    const pf = this.perf;
+    const took = now - t0;
+    if (pf.renderMs.length < 5000) pf.renderMs.push(took);
+    if (this.playing) {
+      this.renderEma = this.renderEma ? this.renderEma * 0.9 + took * 0.1 : took;
+      // Over ~22 ms per frame there is no time left for 30 fps: step down, at most to half size.
+      if (this.renderEma > 22 && this.quality > 0.5) {
+        this.quality = Math.max(0.5, this.quality * 0.8);
+        this.renderEma = 0;
+        this.applyQuality(this.quality);
+      } else if (this.renderEma < 8 && this.quality < 1) {
+        this.quality = Math.min(1, this.quality / 0.8);
+        this.renderEma = 0;
+        this.applyQuality(this.quality);
+      }
+    }
+    if (this.playing) {
+      if (pf.lastFrameAt && pf.frameGapMs.length < 5000) pf.frameGapMs.push(now - pf.lastFrameAt);
+      pf.lastFrameAt = now;
+    } else pf.lastFrameAt = 0;
+    if (pf.seekAt) {
+      if (pf.seekMs.length < 5000) pf.seekMs.push(now - pf.seekAt);
+      pf.seekAt = 0;
+    }
+  }
+
+  private renderInner(t: number): void {
     if (!this.project) return;
     const plan = resolveFrame(this.project, t);
     this.lastPlan = plan;
@@ -286,7 +371,7 @@ export class PreviewPlayer {
     let key: number | string = 0;
     if (slot && slot.el.readyState >= 2) {
       image = slot.el;
-      key = this.playing ? this.frameCounter : slot.version;
+      key = this.playing && !slot.frameEvents ? this.frameCounter : slot.version;
     } else {
       // Photos: look the asset up through the last plan.
       const layer = this.lastPlan?.layers.find((l) => l.kind === "visual" && l.clipId === clipId);
@@ -324,7 +409,7 @@ export class PreviewPlayer {
     const slot = this.video.get(clipId);
     if (!slot || slot.el.readyState < 2) return null;
     // While playing, upload every frame; paused, only after a seek finished.
-    return { image: slot.el, rotation: 0, version: this.playing && !slot.el.paused ? ++this.frameCounter : slot.version };
+    return { image: slot.el, rotation: 0, version: this.playing && !slot.el.paused && !slot.frameEvents ? ++this.frameCounter : slot.version };
   }
 
   /** Make media elements match the timeline at time t. */
@@ -449,7 +534,16 @@ export class PreviewPlayer {
       el.preload = "auto";
       el.crossOrigin = "anonymous";
       el.setAttribute("playsinline", "");
-      const s: VideoSlot = { el, clipId: clip.id, assetId: asset.id, version: 0, ready: false, lastUsed: now };
+      const s: VideoSlot = { el, clipId: clip.id, assetId: asset.id, version: 0, ready: false, lastUsed: now, frameEvents: false };
+      if (typeof el.requestVideoFrameCallback === "function") {
+        s.frameEvents = true;
+        const onFrame = () => {
+          if (this.destroyed) return;
+          s.version++;
+          el.requestVideoFrameCallback(onFrame);
+        };
+        el.requestVideoFrameCallback(onFrame);
+      }
       el.onloadeddata = () => {
         s.ready = true;
         s.version++;
@@ -520,10 +614,10 @@ export class PreviewPlayer {
    * prove preview and export match pixel for pixel.
    */
   async capture(us: number, width: number, height: number): Promise<Blob> {
+    this.pause();
     const canvas = this.canvas;
     const prevW = canvas.width;
     const prevH = canvas.height;
-    this.pause();
     this.compositor.resize(width, height);
     this.seek(us);
     // Seek every element and wait until all visible frames are ready.

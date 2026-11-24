@@ -1,8 +1,6 @@
 "use client";
 
-import { useStudioUi } from "./StudioScreen";
-import { useMotionUi } from "./MotionScreen";
-import { useLibraryUi } from "./LibraryScreen";
+import { useLibraryUi, useMotionUi, useStudioUi } from "@/lib/ui-stores";
 import { Icon, type IconName } from "@just-see/ui";
 import { createId, findClip, getAsset, getSequence, isMediaClip, type Project } from "@just-see/schema";
 import { addBgRemoval, autoReframe, addText, deleteSelection, duplicateSelection, freezeFrame, splitAtPlayhead } from "@/lib/actions";
@@ -118,6 +116,7 @@ export function Toolbar({ onImport, onImportMusic }: { onImport: () => void; onI
   } else {
     tools = [
       { id: "media", icon: "media", label: "media", run: onImport },
+      { id: "overlay", icon: "duplicate", label: "overlay", run: () => window.dispatchEvent(new Event("justsee:overlay")) },
       { id: "library", icon: "folder", label: "library", run: () => useLibraryUi.getState().show() },
       { id: "text", icon: "text", label: "text", run: addText },
       { id: "captions", icon: "style", label: "captions", run: open("captions") },

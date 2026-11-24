@@ -96,6 +96,8 @@ export function Preview() {
     }
     playerRef.current = player;
     (window as unknown as { __justSeePreview?: unknown }).__justSeePreview = {
+      stats: () => player.stats(),
+      resetStats: () => player.resetStats(),
       capture: async (us: number, w: number, h: number) => {
         const blob = await player.capture(us, w, h);
         const buf = new Uint8Array(await blob.arrayBuffer());

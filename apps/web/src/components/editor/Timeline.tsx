@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Icon } from "@just-see/ui";
 import {
   clipEndUs,
@@ -22,10 +29,16 @@ import { haptic } from "@/lib/theme";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { ClipBlock } from "./ClipBlock";
 
-const ROW_H: Record<Track["type"], number> = { main: 60, video: 44, text: 34, audio: 40 };
+const ROW_H: Record<Track["type"], number> = {
+  main: 60,
+  video: 44,
+  text: 34,
+  audio: 40,
+};
 const ROW_GAP = 6;
 const RULER_H = 22;
 const SNAP_PX = 10;
+const NO_CLIPS: Track["clips"] = [];
 
 const TRACK_COLOR: Record<Track["type"], string> = {
   main: "var(--track-main)",
@@ -58,8 +71,27 @@ function tickStep(pps: number): number {
 }
 
 type Drag =
-  | { kind: "pan"; startX: number; startY: number; startT: number; startScroll: number; lastX: number; lastT: number; vel: number; moved: boolean; tapClip?: string }
-  | { kind: "trim"; clipId: string; edge: "start" | "end"; startX: number; origEdge: number; snapped: boolean; lastCmd?: Command }
+  | {
+      kind: "pan";
+      startX: number;
+      startY: number;
+      startT: number;
+      startScroll: number;
+      lastX: number;
+      lastT: number;
+      vel: number;
+      moved: boolean;
+      tapClip?: string;
+    }
+  | {
+      kind: "trim";
+      clipId: string;
+      edge: "start" | "end";
+      startX: number;
+      origEdge: number;
+      snapped: boolean;
+      lastCmd?: Command;
+    }
   | {
       kind: "move";
       clipId: string;
@@ -91,7 +123,9 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
   const [scrollY, setScrollY] = useState(0);
 
   const rows = useMemo(() => (project ? layoutRows(project) : []), [project]);
-  const contentH = rows.length ? rows[rows.length - 1]!.top + rows[rows.length - 1]!.height + 12 : 120;
+  const contentH = rows.length
+    ? rows[rows.length - 1]!.top + rows[rows.length - 1]!.height + 12
+    : 120;
   const duration = project ? sequenceDurationUs(getSequence(project)) : 0;
 
   useLayoutEffect(() => {
@@ -108,15 +142,23 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
     const apply = () => {
       const s = useEditor.getState();
       const el = contentRef.current;
-      if (el) el.style.transform = `translate3d(${width / 2 - (s.playheadUs / 1e6) * s.pxPerSecond}px, ${-scrollY}px, 0)`;
+      if (el)
+        el.style.transform = `translate3d(${width / 2 - (s.playheadUs / 1e6) * s.pxPerSecond}px, ${-scrollY}px, 0)`;
     };
     apply();
     return useEditor.subscribe((s, prev) => {
-      if (s.playheadUs !== prev.playheadUs || s.pxPerSecond !== prev.pxPerSecond) apply();
+      if (
+        s.playheadUs !== prev.playheadUs ||
+        s.pxPerSecond !== prev.pxPerSecond
+      )
+        apply();
     });
   }, [width, scrollY]);
 
-  const maxScrollY = Math.max(0, contentH - (viewportRef.current?.clientHeight ?? contentH));
+  const maxScrollY = Math.max(
+    0,
+    contentH - (viewportRef.current?.clientHeight ?? contentH),
+  );
 
   const timeAtClientX = useCallback(
     (clientX: number) => {
@@ -124,7 +166,9 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
       if (!el) return 0;
       const r = el.getBoundingClientRect();
       const s = useEditor.getState();
-      return s.playheadUs + ((clientX - r.left - width / 2) / s.pxPerSecond) * 1e6;
+      return (
+        s.playheadUs + ((clientX - r.left - width / 2) / s.pxPerSecond) * 1e6
+      );
     },
     [width],
   );
@@ -133,7 +177,9 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
     const el = viewportRef.current;
     if (!el) return undefined;
     const y = clientY - el.getBoundingClientRect().top + scrollY;
-    return rows.find((r) => y >= r.top - ROW_GAP / 2 && y < r.top + r.height + ROW_GAP / 2);
+    return rows.find(
+      (r) => y >= r.top - ROW_GAP / 2 && y < r.top + r.height + ROW_GAP / 2,
+    );
   };
 
   const stopInertia = () => {
@@ -151,7 +197,10 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
     if (pointers.current.size === 2) {
       // Pinch to zoom; abandon any edit in progress.
       s.preview(null);
-      const [a, b] = [...pointers.current.values()] as [{ x: number; y: number }, { x: number; y: number }];
+      const [a, b] = [...pointers.current.values()] as [
+        { x: number; y: number },
+        { x: number; y: number },
+      ];
       dragRef.current = {
         kind: "pinch",
         startDist: Math.max(10, Math.abs(b.x - a.x)),
@@ -161,7 +210,9 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
       return;
     }
     if (pointers.current.size > 2) return;
-    const target = (e.target as HTMLElement).closest<HTMLElement>("[data-role]");
+    const target = (e.target as HTMLElement).closest<HTMLElement>(
+      "[data-role]",
+    );
     const role = target?.dataset.role;
     const clipId = target?.dataset.clipId;
     if (s.playing) s.setPlaying(false);
@@ -174,7 +225,8 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
         clipId,
         edge: role === "handle-start" ? "start" : "end",
         startX: e.clientX,
-        origEdge: role === "handle-start" ? loc.clip.startUs : clipEndUs(loc.clip),
+        origEdge:
+          role === "handle-start" ? loc.clip.startUs : clipEndUs(loc.clip),
         snapped: false,
       };
       return;
@@ -190,7 +242,12 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
       onAddMedia();
       return;
     }
-    if (role === "clip" && clipId && s.selection?.kind === "clip" && s.selection.clipId === clipId) {
+    if (
+      role === "clip" &&
+      clipId &&
+      s.selection?.kind === "clip" &&
+      s.selection.clipId === clipId
+    ) {
       const loc = findClip(p, clipId);
       if (loc && !loc.track.locked) {
         dragRef.current = {
@@ -233,7 +290,10 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
     if (d.kind === "pinch") {
       const pts = [...pointers.current.values()];
       if (pts.length < 2) return;
-      const [a, b] = pts as [{ x: number; y: number }, { x: number; y: number }];
+      const [a, b] = pts as [
+        { x: number; y: number },
+        { x: number; y: number },
+      ];
       s.setZoom(d.startPps * (Math.max(10, Math.abs(b.x - a.x)) / d.startDist));
       return;
     }
@@ -258,7 +318,14 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
     const thresholdUs = (SNAP_PX / pps0) * 1e6;
     if (d.kind === "trim") {
       const raw = d.origEdge + ((e.clientX - d.startX) / pps0) * 1e6;
-      const snap = snapTime(raw, collectSnapPoints(seq, { excludeClipId: d.clipId, playheadUs: s.playheadUs }), thresholdUs);
+      const snap = snapTime(
+        raw,
+        collectSnapPoints(seq, {
+          excludeClipId: d.clipId,
+          playheadUs: s.playheadUs,
+        }),
+        thresholdUs,
+      );
       if (snap.snapped && !d.snapped) haptic();
       d.snapped = snap.snapped;
       const loc = findClip(p, d.clipId);
@@ -268,11 +335,19 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
         // Main track is magnetic: trimming the start eats into the clip, its start stays.
         timeUs = Math.round(loc.clip.startUs + (raw - d.origEdge));
       }
-      d.lastCmd = { type: "clip/trim", payload: { clipId: d.clipId, edge: d.edge, timeUs } };
+      d.lastCmd = {
+        type: "clip/trim",
+        payload: { clipId: d.clipId, edge: d.edge, timeUs },
+      };
       if (s.editMode === "roll" && loc.track.type === "main") {
         const deltaUs = Math.round(raw - d.origEdge);
-        const target = d.edge === "start" ? loc.clip.id : loc.track.clips[loc.index + 1]?.id;
-        if (target) d.lastCmd = { type: "clip/roll", payload: { clipId: target, deltaUs } };
+        const target =
+          d.edge === "start" ? loc.clip.id : loc.track.clips[loc.index + 1]?.id;
+        if (target)
+          d.lastCmd = {
+            type: "clip/roll",
+            payload: { clipId: target, deltaUs },
+          };
       }
       s.preview(d.lastCmd);
       return;
@@ -284,8 +359,14 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
         d.moved = true;
         d.lastCmd =
           s.editMode === "slip"
-            ? { type: "clip/slip", payload: { clipId: d.clipId, deltaUs: -dxUs } }
-            : { type: "clip/slide", payload: { clipId: d.clipId, deltaUs: dxUs } };
+            ? {
+                type: "clip/slip",
+                payload: { clipId: d.clipId, deltaUs: -dxUs },
+              }
+            : {
+                type: "clip/slide",
+                payload: { clipId: d.clipId, deltaUs: dxUs },
+              };
         s.preview(d.lastCmd);
         return;
       }
@@ -302,7 +383,8 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
         const ok =
           (row.track.type === "text" && kind === "text") ||
           (row.track.type === "audio" && kind === "audio") ||
-          ((row.track.type === "main" || row.track.type === "video") && (kind === "video" || kind === "image"));
+          ((row.track.type === "main" || row.track.type === "video") &&
+            (kind === "video" || kind === "image"));
         if (ok) trackId = row.track.id;
       }
       const target = seq.tracks.find((x) => x.id === trackId);
@@ -310,7 +392,10 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
       if (target?.type === "main") {
         start = Math.max(0, timeAtClientX(e.clientX));
       } else {
-        const points = collectSnapPoints(seq, { excludeClipId: d.clipId, playheadUs: s.playheadUs });
+        const points = collectSnapPoints(seq, {
+          excludeClipId: d.clipId,
+          playheadUs: s.playheadUs,
+        });
         const a = snapTime(start, points, thresholdUs);
         const b = snapTime(start + d.duration, points, thresholdUs);
         const snapped = a.snapped || b.snapped;
@@ -321,7 +406,12 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
       }
       const cmd: Command = {
         type: "clip/move",
-        payload: { clipId: d.clipId, trackId, startUs: Math.max(0, Math.round(start)), newTrackId: d.newTrackId },
+        payload: {
+          clipId: d.clipId,
+          trackId,
+          startUs: Math.max(0, Math.round(start)),
+          newTrackId: d.newTrackId,
+        },
       };
       d.lastCmd = cmd;
       s.preview(cmd);
@@ -389,15 +479,109 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
     return () => el.removeEventListener("wheel", onWheel);
   }, [onWheel]);
 
+  const mainRow = rows.find((r) => r.track.type === "main");
+  const mainClips = mainRow?.track.clips ?? NO_CLIPS;
+  const endX = (duration / 1e6) * pps;
+  // Rows only change with the project, zoom or selection: vertical scrolling
+  // and playhead moves must not re-render every clip (50+ tracks stay smooth).
+  const rowsView = useMemo(
+    () =>
+      !project ? null : (
+        <>
+          {rows.map((r) => (
+            <div
+              key={r.track.id}
+              className="absolute left-0"
+              style={{ top: r.top, height: r.height }}
+              data-testid={`track-${r.track.type}`}
+            >
+              {r.track.clips.map((c) => (
+                <ClipBlock
+                  key={c.id}
+                  clip={c}
+                  asset={
+                    isMediaClip(c) ? getAsset(project, c.assetId) : undefined
+                  }
+                  pps={pps}
+                  height={r.height}
+                  selected={
+                    (selection?.kind === "clip" && selection.clipId === c.id) ||
+                    multi.includes(c.id)
+                  }
+                  trackColor={TRACK_COLOR[r.track.type]}
+                />
+              ))}
+              {r.track.type === "main" &&
+                mainClips.map((c, i) => {
+                  if (i === 0 || !isMediaClip(c)) return null;
+                  const has = !!c.transitionIn;
+                  const x =
+                    (c.startUs / 1e6) * pps +
+                    (has
+                      ? ((c.transitionIn?.durationUs ?? 0) / 1e6) * pps * 0.5
+                      : 0);
+                  const active =
+                    selection?.kind === "transition" &&
+                    selection.clipId === c.id;
+                  return (
+                    <button
+                      key={`tr-${c.id}`}
+                      type="button"
+                      data-role="transition"
+                      data-clip-id={c.id}
+                      data-testid="transition-button"
+                      aria-label={t("transition")}
+                      className={`absolute z-10 flex h-7 w-7 -translate-x-1/2 items-center justify-center rounded-md border ${
+                        has || active
+                          ? "border-accent bg-accent text-accent-contrast"
+                          : "border-line bg-surface-2 text-fg"
+                      }`}
+                      style={{ left: x, top: r.height / 2 - 14 }}
+                    >
+                      <Icon name="transition" size={16} />
+                    </button>
+                  );
+                })}
+              {r.track.type === "main" && (
+                <button
+                  type="button"
+                  data-role="add"
+                  aria-label={t("addMedia")}
+                  data-testid="timeline-add"
+                  className="absolute flex items-center justify-center rounded-md bg-fg text-bg"
+                  style={{
+                    left: endX + 10,
+                    top: r.height / 2 - 18,
+                    width: 36,
+                    height: 36,
+                  }}
+                >
+                  <Icon name="plus" size={22} />
+                </button>
+              )}
+              {r.track.type === "main" && mainClips.length === 0 && (
+                <div
+                  className="pointer-events-none absolute whitespace-nowrap text-sm text-muted"
+                  style={{ left: 58, top: r.height / 2 - 10 }}
+                >
+                  {t("emptyTimeline")}
+                </div>
+              )}
+            </div>
+          ))}
+        </>
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, project, pps, selection, multi, mainClips, endX, t],
+  );
+
   if (!project) return null;
   const seq = getSequence(project);
   const step = tickStep(pps);
   const totalSec = duration / 1e6 + width / pps;
   const ticks: number[] = [];
-  for (let s = 0; s <= totalSec && ticks.length < 2000; s += step) ticks.push(s);
-  const mainRow = rows.find((r) => r.track.type === "main");
-  const mainClips = mainRow?.track.clips ?? [];
-  const endX = (duration / 1e6) * pps;
+  for (let s = 0; s <= totalSec && ticks.length < 2000; s += step)
+    ticks.push(s);
 
   return (
     <div
@@ -411,13 +595,26 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
       data-testid="timeline"
       aria-label="Timeline"
     >
-      <div ref={contentRef} className="absolute left-0 top-0 will-change-transform" style={{ height: contentH }}>
+      <div
+        ref={contentRef}
+        className="absolute left-0 top-0 will-change-transform"
+        style={{ height: contentH }}
+      >
         {/* Ruler */}
-        <div className="absolute left-0 top-0" style={{ height: RULER_H, width: totalSec * pps }}>
+        <div
+          className="absolute left-0 top-0"
+          style={{ height: RULER_H, width: totalSec * pps }}
+        >
           {ticks.map((s) => (
-            <div key={s} className="absolute top-0 text-[10px] text-muted" style={{ left: s * pps }}>
+            <div
+              key={s}
+              className="absolute top-0 text-[10px] text-muted"
+              style={{ left: s * pps }}
+            >
               <div className="h-1.5 w-px bg-line" />
-              <span className="absolute left-1 top-1 whitespace-nowrap">{formatTimecode(s * 1e6, step < 1)}</span>
+              <span className="absolute left-1 top-1 whitespace-nowrap">
+                {formatTimecode(s * 1e6, step < 1)}
+              </span>
             </div>
           ))}
         </div>
@@ -426,69 +623,26 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
             key={m.id}
             data-testid={m.kind === "beat" ? "beat-marker" : "marker"}
             className="pointer-events-none absolute top-0 w-px"
-            style={{ left: (m.timeUs / 1e6) * pps, height: contentH, background: m.kind === "beat" ? "rgba(255,214,10,0.35)" : m.color }}
+            style={{
+              left: (m.timeUs / 1e6) * pps,
+              height: contentH,
+              background: m.kind === "beat" ? "rgba(255,214,10,0.35)" : m.color,
+            }}
           >
-            <span className="absolute -left-1 top-0 h-2 w-2 rotate-45" style={{ background: m.color }} />
+            <span
+              className="absolute -left-1 top-0 h-2 w-2 rotate-45"
+              style={{ background: m.color }}
+            />
           </div>
         ))}
-        {rows.map((r) => (
-          <div key={r.track.id} className="absolute left-0" style={{ top: r.top, height: r.height }} data-testid={`track-${r.track.type}`}>
-            {r.track.clips.map((c) => (
-              <ClipBlock
-                key={c.id}
-                clip={c}
-                asset={isMediaClip(c) ? getAsset(project, c.assetId) : undefined}
-                pps={pps}
-                height={r.height}
-                selected={(selection?.kind === "clip" && selection.clipId === c.id) || multi.includes(c.id)}
-                trackColor={TRACK_COLOR[r.track.type]}
-              />
-            ))}
-            {r.track.type === "main" &&
-              mainClips.map((c, i) => {
-                if (i === 0 || !isMediaClip(c)) return null;
-                const has = !!c.transitionIn;
-                const x = (c.startUs / 1e6) * pps + (has ? ((c.transitionIn?.durationUs ?? 0) / 1e6) * pps * 0.5 : 0);
-                const active = selection?.kind === "transition" && selection.clipId === c.id;
-                return (
-                  <button
-                    key={`tr-${c.id}`}
-                    type="button"
-                    data-role="transition"
-                    data-clip-id={c.id}
-                    data-testid="transition-button"
-                    aria-label={t("transition")}
-                    className={`absolute z-10 flex h-7 w-7 -translate-x-1/2 items-center justify-center rounded-md border ${
-                      has || active ? "border-accent bg-accent text-accent-contrast" : "border-line bg-surface-2 text-fg"
-                    }`}
-                    style={{ left: x, top: r.height / 2 - 14 }}
-                  >
-                    <Icon name="transition" size={16} />
-                  </button>
-                );
-              })}
-            {r.track.type === "main" && (
-              <button
-                type="button"
-                data-role="add"
-                aria-label={t("addMedia")}
-                data-testid="timeline-add"
-                className="absolute flex items-center justify-center rounded-md bg-fg text-bg"
-                style={{ left: endX + 10, top: r.height / 2 - 18, width: 36, height: 36 }}
-              >
-                <Icon name="plus" size={22} />
-              </button>
-            )}
-            {r.track.type === "main" && mainClips.length === 0 && (
-              <div className="pointer-events-none absolute whitespace-nowrap text-sm text-muted" style={{ left: 58, top: r.height / 2 - 10 }}>
-                {t("emptyTimeline")}
-              </div>
-            )}
-          </div>
-        ))}
+        {rowsView}
       </div>
       {selection?.kind === "clip" && (
-        <div className="absolute right-1 top-1 z-30 flex gap-0.5 rounded-lg bg-surface-2/90 p-0.5 text-[10px]" role="radiogroup" aria-label="Edit mode">
+        <div
+          className="absolute right-1 top-1 z-30 flex gap-0.5 rounded-lg bg-surface-2/90 p-0.5 text-[10px]"
+          role="radiogroup"
+          aria-label="Edit mode"
+        >
           {(["trim", "roll", "slip", "slide"] as const).map((m) => (
             <button
               key={m}
@@ -506,7 +660,10 @@ export function Timeline({ onAddMedia }: { onAddMedia: () => void }) {
         </div>
       )}
       {/* Playhead */}
-      <div className="pointer-events-none absolute inset-y-0 z-20 w-0.5 bg-fg" style={{ left: width / 2 - 1 }}>
+      <div
+        className="pointer-events-none absolute inset-y-0 z-20 w-0.5 bg-fg"
+        style={{ left: width / 2 - 1 }}
+      >
         <div className="absolute -left-[5px] top-0 h-3 w-3 rotate-45 rounded-sm bg-fg" />
       </div>
       <span className="sr-only" aria-live="polite">

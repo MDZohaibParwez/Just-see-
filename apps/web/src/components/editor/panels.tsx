@@ -516,7 +516,7 @@ export function TextStylePanel() {
             <span style={{ fontFamily: f.css }}>{f.family} अ</span>
           </Chip>
         ))}
-        <Chip onClick={() => void import("./LibraryScreen").then((m) => m.useLibraryUi.getState().show("font"))} testId="more-fonts">
+        <Chip onClick={() => void import("@/lib/ui-stores").then((m) => m.useLibraryUi.getState().show("font"))} testId="more-fonts">
           + {t("moreFonts")}
         </Chip>
       </div>

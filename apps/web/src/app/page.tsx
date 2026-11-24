@@ -56,6 +56,7 @@ export default function Home() {
 
   return (
     <main className="mx-auto flex min-h-full max-w-3xl flex-col px-4 pb-16 pt-[max(1rem,env(safe-area-inset-top))]">
+      {projects !== null && <span hidden data-testid="home-ready" />}
       <header className="flex items-center justify-between py-2">
         <div className="flex items-center gap-2">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-accent-contrast">

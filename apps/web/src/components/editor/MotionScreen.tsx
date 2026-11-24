@@ -1,7 +1,7 @@
 "use client";
 
+import { useMotionUi } from "@/lib/ui-stores";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
-import { create } from "zustand";
 import {
   TEMPLATES,
   TEXT_PRESETS,
@@ -34,7 +34,7 @@ import {
 } from "@/lib/motion";
 import { Chip } from "./controls";
 
-export const useMotionUi = create<{ openId: string | null; open(id: string | null): void }>((set) => ({ openId: null, open: (openId) => set({ openId }) }));
+export { useMotionUi };
 
 const NO_COMPS: MotionComp[] = [];
 const S = 1e6;

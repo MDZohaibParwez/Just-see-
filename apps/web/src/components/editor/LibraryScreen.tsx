@@ -1,7 +1,7 @@
 "use client";
 
+import { useLibraryUi, type LibraryTab } from "@/lib/ui-stores";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { create } from "zustand";
 import { FONT_CATALOG, REEL_STYLE_BY_ID, SFX_BY_ID, fontCss } from "@just-see/engine";
 import { Icon } from "@just-see/ui";
 import { useEditor } from "@/lib/editor-store";
@@ -12,14 +12,9 @@ import { listMyTemplates, localItems, searchLocal, applyItem, addOnline, deleteM
 import { searchOpenverse, type OnlineItem } from "@/lib/openverse";
 import { Chip } from "./controls";
 
-export const useLibraryUi = create<{ open: boolean; tab: Tab; show(tab?: Tab): void; hide(): void }>((set) => ({
-  open: false,
-  tab: "all",
-  show: (tab = "all") => set({ open: true, tab }),
-  hide: () => set({ open: false }),
-}));
+export { useLibraryUi };
 
-type Tab = LibKind | "all" | "online" | "licenses";
+type Tab = LibraryTab;
 const TABS: Tab[] = ["all", "style", "font", "music", "sound", "template", "online", "licenses"];
 
 let previewCtx: AudioContext | null = null;

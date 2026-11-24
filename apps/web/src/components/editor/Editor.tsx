@@ -1,17 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { addText, deleteSelection, duplicateSelection, importFiles, splitAtPlayhead, stepFrame, togglePlay } from "@/lib/actions";
 import { startAutosave } from "@/lib/autosave";
 import { useEditor } from "@/lib/editor-store";
 import { useT } from "@/lib/i18n";
-import { ExportPanel } from "./ExportPanel";
-import { CaptionsPanel } from "./CaptionsPanel";
-import { AiVoicePanel, AudioFxPanel, SfxPanel } from "./AudioPanels";
-import { StudioScreen, useStudioUi } from "./StudioScreen";
-import { MotionScreen, useMotionUi } from "./MotionScreen";
-import { LibraryScreen, useLibraryUi } from "./LibraryScreen";
-import { LivePanel } from "./LivePanel";
+import { useLibraryUi, useMotionUi, useStudioUi } from "@/lib/ui-stores";
 import {
   AdjustPanel,
   AnimationPanel,
@@ -31,6 +25,58 @@ import { Toolbar } from "./Toolbar";
 import { TopBar } from "./TopBar";
 import { Transport } from "./Transport";
 
+// Big screens and panels load only when opened, so the editor starts fast on phones.
+const ExportPanel = lazy(() => import("./ExportPanel").then((m) => ({ default: m.ExportPanel })));
+const CaptionsPanel = lazy(() => import("./CaptionsPanel").then((m) => ({ default: m.CaptionsPanel })));
+const AiVoicePanel = lazy(() => import("./AudioPanels").then((m) => ({ default: m.AiVoicePanel })));
+const AudioFxPanel = lazy(() => import("./AudioPanels").then((m) => ({ default: m.AudioFxPanel })));
+const SfxPanel = lazy(() => import("./AudioPanels").then((m) => ({ default: m.SfxPanel })));
+const StudioScreen = lazy(() => import("./StudioScreen").then((m) => ({ default: m.StudioScreen })));
+const MotionScreen = lazy(() => import("./MotionScreen").then((m) => ({ default: m.MotionScreen })));
+const LibraryScreen = lazy(() => import("./LibraryScreen").then((m) => ({ default: m.LibraryScreen })));
+const LivePanel = lazy(() => import("./LivePanel").then((m) => ({ default: m.LivePanel })));
+
+function PanelLoading() {
+  return (
+    <div className="flex h-24 items-center justify-center text-sm text-fg-muted" role="status">
+      …
+    </div>
+  );
+}
+
+/** Loads the live-editing code (PeerJS) only once someone starts or joins a session. */
+function LiveGate() {
+  const [on, setOn] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).has("live"));
+  useEffect(() => {
+    if (on) return;
+    const go = () => {
+      setOn(true);
+      // The panel was not listening yet: ask it again once it has loaded.
+      setTimeout(() => window.dispatchEvent(new Event("justsee:live")), 50);
+    };
+    window.addEventListener("justsee:live", go, { once: true });
+    return () => window.removeEventListener("justsee:live", go);
+  }, [on]);
+  return on ? (
+    <Suspense fallback={null}>
+      <LivePanel />
+    </Suspense>
+  ) : null;
+}
+
+function Screens() {
+  const studio = useStudioUi((s) => s.openId !== null);
+  const motion = useMotionUi((s) => s.openId !== null);
+  const library = useLibraryUi((s) => s.open);
+  return (
+    <Suspense fallback={null}>
+      {studio && <StudioScreen />}
+      {motion && <MotionScreen />}
+      {library && <LibraryScreen />}
+    </Suspense>
+  );
+}
+
 function useMediaQuery(query: string): boolean {
   return useSyncExternalStore(
     (cb) => {
@@ -44,6 +90,14 @@ function useMediaQuery(query: string): boolean {
 }
 
 function ActivePanel() {
+  return (
+    <Suspense fallback={<PanelLoading />}>
+      <PanelBody />
+    </Suspense>
+  );
+}
+
+function PanelBody() {
   const panel = useEditor((s) => s.panel);
   switch (panel) {
     case "speed":
@@ -106,6 +160,12 @@ export function Editor() {
   const t = useT();
   const mediaInput = useRef<HTMLInputElement>(null);
   const musicInput = useRef<HTMLInputElement>(null);
+  const overlayInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const on = () => overlayInput.current?.click();
+    window.addEventListener("justsee:overlay", on);
+    return () => window.removeEventListener("justsee:overlay", on);
+  }, []);
   const stageRef = useRef<HTMLDivElement>(null);
   const hasPanel = useEditor((s) => s.panel !== null);
   const desktop = useMediaQuery("(min-width: 1024px)");
@@ -194,10 +254,8 @@ export function Editor() {
         </div>
         {hasPanel && desktop && <aside className="flex w-[360px] shrink-0 flex-col">{<ActivePanel />}</aside>}
       </div>
-      <StudioScreen />
-      <MotionScreen />
-      <LibraryScreen />
-      <LivePanel />
+      <Screens />
+      <LiveGate />
       <p className="sr-only">{t("keyboardHint")}</p>
       <input
         ref={mediaInput}
@@ -209,6 +267,18 @@ export function Editor() {
         onChange={(e) => {
           const files = e.currentTarget.files;
           if (files) void importFiles(Array.from(files), "media");
+          e.currentTarget.value = "";
+        }}
+      />
+      <input
+        ref={overlayInput}
+        type="file"
+        accept="video/*,image/*"
+        hidden
+        data-testid="overlay-input"
+        onChange={(e) => {
+          const files = e.currentTarget.files;
+          if (files) void importFiles(Array.from(files), "overlay");
           e.currentTarget.value = "";
         }}
       />
