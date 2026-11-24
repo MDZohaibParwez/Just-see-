@@ -63,6 +63,20 @@ export async function audit(page: Page): Promise<A11yIssue[]> {
         // color(srgb r g b / a) and other forms
         const s = c.match(/color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)/);
         if (s) return [Number(s[1]) * 255, Number(s[2]) * 255, Number(s[3]) * 255, s[4] === undefined ? 1 : Number(s[4])];
+        // oklab(L a b / alpha), as Tailwind 4 writes colours with opacity.
+        const o = c.match(/oklab\(([-\d.]+%?) ([-\d.e]+) ([-\d.e]+)(?: \/ ([\d.]+%?))?\)/);
+        if (o) {
+          const L = o[1]!.endsWith("%") ? parseFloat(o[1]!) / 100 : Number(o[1]);
+          const A = Number(o[2]);
+          const B = Number(o[3]);
+          const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3;
+          const m = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3;
+          const k = (L - 0.0894841775 * A - 1.291485548 * B) ** 3;
+          const lin = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * k, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * k, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * k];
+          const enc = (v: number) => 255 * Math.min(1, Math.max(0, v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055));
+          const alpha = o[4] === undefined ? 1 : o[4].endsWith("%") ? parseFloat(o[4]) / 100 : Number(o[4]);
+          return [enc(lin[0]!), enc(lin[1]!), enc(lin[2]!), alpha];
+        }
         return null;
       }
       const p = m[1]!.split(/[\s,/]+/).filter(Boolean).map(Number);

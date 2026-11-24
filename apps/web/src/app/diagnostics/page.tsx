@@ -133,7 +133,7 @@ export default function Diagnostics() {
 
   return (
     <main className="mx-auto max-w-xl p-4">
-      <Link href="/" className="text-sm text-accent">
+      <Link href="/" className="text-sm text-accent-strong">
         ← Home
       </Link>
       <h1 className="my-3 text-xl font-bold">Device check</h1>

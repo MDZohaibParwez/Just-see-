@@ -6,7 +6,14 @@ import { ensureFixtures, fixture, mainClipCount, newProject } from "./helpers";
 test.beforeAll(() => ensureFixtures());
 
 async function check(page: Page, screen: string, all: string[]): Promise<void> {
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(150);
+  // Let slide/fade-in animations finish so colours are final.
+  await page.evaluate(() =>
+    Promise.race([
+      Promise.all(document.getAnimations().filter((a) => a.effect?.getComputedTiming().iterations !== Infinity).map((a) => a.finished.catch(() => undefined))),
+      new Promise((r) => setTimeout(r, 2000)),
+    ]),
+  );
   const issues: A11yIssue[] = await audit(page);
   for (const i of issues) all.push(`${screen}: ${i.rule} ${i.what}${i.detail ? ` ${i.detail}` : ""}`);
 }

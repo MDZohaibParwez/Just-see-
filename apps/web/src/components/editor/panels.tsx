@@ -464,7 +464,10 @@ export function TextPanel() {
               })
             }
           >
-            <span style={{ fontWeight: tpl.style.fontWeight, color: tpl.preview }}>{tpl.label}</span>
+            {/* Previews keep their real colours, on a dark tile in both themes. */}
+            <span className="rounded bg-[#15171c] px-1.5" style={{ fontWeight: tpl.style.fontWeight, color: tpl.preview }}>
+              {tpl.label}
+            </span>
           </Chip>
         ))}
       </div>

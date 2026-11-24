@@ -175,6 +175,12 @@ export function Editor() {
   // Keyboard shortcuts for desktop.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Esc closes a full-screen editor (Library, Studio, Motion).
+      if (e.key === "Escape") {
+        if (useLibraryUi.getState().open) return useLibraryUi.getState().hide();
+        if (useMotionUi.getState().openId) return useMotionUi.getState().open(null);
+        if (useStudioUi.getState().openId) return useStudioUi.getState().open(null);
+      }
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
       if (useStudioUi.getState().openId || useMotionUi.getState().openId || useLibraryUi.getState().open) return;

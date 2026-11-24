@@ -102,15 +102,15 @@ export const ClipBlock = memo(function ClipBlock({ clip, asset, pps, height, sel
     >
       {asset && (clip.kind === "video" || clip.kind === "image") && <Thumbs asset={asset} clip={clip} pps={pps} height={height} />}
       {asset && clip.kind === "audio" && <Wave asset={asset} clip={clip} pps={pps} height={height} />}
-      <div className="pointer-events-none absolute left-1 top-0.5 max-w-full truncate rounded bg-black/45 px-1 text-[10px] font-medium leading-4 text-white">
+      <div className="pointer-events-none absolute left-1 top-0.5 max-w-full truncate rounded bg-black/65 px-1 text-[10px] font-medium leading-4 text-white">
         {label || " "}
       </div>
       {isMediaClip(clip) && clip.effects.length > 0 && (
-        <div className="pointer-events-none absolute bottom-0.5 left-1 rounded bg-black/45 px-1 text-[10px] leading-4 text-white">
+        <div className="pointer-events-none absolute bottom-0.5 left-1 rounded bg-black/65 px-1 text-[10px] leading-4 text-white">
           fx {clip.effects.length}
         </div>
       )}
-      <div className="pointer-events-none absolute bottom-0.5 right-1 rounded bg-black/45 px-1 text-[10px] leading-4 text-white">
+      <div className="pointer-events-none absolute bottom-0.5 right-1 rounded bg-black/65 px-1 text-[10px] leading-4 text-white">
         {formatTimecode(clip.durationUs)}
       </div>
       {Object.keys(clip.keyframes ?? {}).length > 0 && (
