@@ -45,6 +45,6 @@ Measured by `apps/web/e2e/phase7-perf.spec.ts` (Pixel 7 emulation). The test mac
 3. Switch to light theme (settings) and check that buttons and labels are easy to read.
 4. Device check page → **Problems & usage** shows your feature counts.
 
-## Needs the owner
+## Online storage
 
-- **Vercel Blob store** (from Phase 6): still waiting for the usage counter to fall under 1 GB after `clipforge-clips` was deleted. Share links, cloud backups, the connector and "Send report" need it.
+- Vercel Blob store `just-see-files` (Mumbai) is connected to `just-see-api`; `/api/config` reports `storage: "blob"`. Share links, cloud backups, the connector and "Send report" now have storage. Files auto-delete after 30 days.
