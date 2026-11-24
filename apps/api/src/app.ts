@@ -6,7 +6,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { RenderJobSchema, type RenderJob } from "@just-see/schema";
 import { addMediaBytes, buildMcpServer, links, loadRecipe, newId, saveRecipe, type Ctx } from "./mcp";
-import { FsStore, assertSafePath } from "./store";
+import { FsStore, assertSafePath, maybeCleanup } from "./store";
 
 const MAX_JSON = 1024 * 1024;
 
@@ -83,6 +83,8 @@ export async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx
 
     // Direct browser uploads: Vercel Blob client tokens, or a PUT URL in local mode.
     if (route === "upload" && req.method === "POST") {
+      // New files are coming in: first drop ones older than 30 days.
+      await maybeCleanup(ctx.store);
       const body = await readJson<Record<string, unknown>>(req);
       if (ctx.store.mode === "fs") {
         const name = String(body.pathname ?? "");

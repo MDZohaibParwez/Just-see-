@@ -13,6 +13,28 @@ export interface Store {
   putBytes(pathname: string, body: Uint8Array | ReadableStream<Uint8Array>, contentType: string): Promise<string>;
   /** Public URL of a stored file. */
   urlOf(pathname: string): string;
+  /** Delete files older than maxAgeMs (except meta/). Returns how many were deleted. */
+  cleanup(maxAgeMs: number, now?: number): Promise<number>;
+}
+
+/** Files are kept this long, so the free 1 GB Blob limit does not fill up. */
+export const KEEP_MS = 30 * 24 * 60 * 60 * 1000;
+const CLEANUP_EVERY_MS = 12 * 60 * 60 * 1000;
+const MARKER = "meta/last-cleanup.json";
+
+/**
+ * Run cleanup at most every 12 hours. Called from normal requests, so no
+ * scheduler is needed. Never throws: a failed cleanup must not break uploads.
+ */
+export async function maybeCleanup(store: Store, now = Date.now()): Promise<number> {
+  try {
+    const last = await store.getJson<{ at: number }>(MARKER);
+    if (last && now - last.at < CLEANUP_EVERY_MS) return 0;
+    await store.putJson(MARKER, { at: now });
+    return await store.cleanup(KEEP_MS, now);
+  } catch {
+    return 0;
+  }
 }
 
 const SAFE = /^[a-zA-Z0-9][a-zA-Z0-9/_\-.]{0,300}$/;
@@ -62,6 +84,28 @@ export class FsStore implements Store {
     }
     return this.urlOf(p);
   }
+  async cleanup(maxAgeMs: number, now = Date.now()): Promise<number> {
+    let n = 0;
+    const walk = async (dir: string): Promise<void> => {
+      let entries: import("node:fs").Dirent[];
+      try {
+        entries = await fs.readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of entries) {
+        const f = path.join(dir, e.name);
+        if (e.isDirectory()) {
+          if (path.relative(this.dir, f) !== "meta") await walk(f);
+        } else if (now - (await fs.stat(f)).mtimeMs > maxAgeMs) {
+          await fs.rm(f, { force: true });
+          n++;
+        }
+      }
+    };
+    await walk(this.dir);
+    return n;
+  }
   async readFile(p: string): Promise<Buffer | null> {
     try {
       return await fs.readFile(this.file(p));
@@ -96,6 +140,21 @@ export class BlobStore implements Store {
     const { put } = await import("@vercel/blob");
     const r = await put(assertSafePath(p), body instanceof Uint8Array ? Buffer.from(body) : body, { access: "public", addRandomSuffix: false, allowOverwrite: true, contentType, token: this.token, multipart: true });
     return r.url;
+  }
+  async cleanup(maxAgeMs: number, now = Date.now()): Promise<number> {
+    const { list, del } = await import("@vercel/blob");
+    let cursor: string | undefined;
+    let n = 0;
+    do {
+      const page = await list({ token: this.token, cursor, limit: 1000 });
+      const old = page.blobs.filter((b) => !b.pathname.startsWith("meta/") && now - new Date(b.uploadedAt).getTime() > maxAgeMs).map((b) => b.url);
+      if (old.length) {
+        await del(old, { token: this.token });
+        n += old.length;
+      }
+      cursor = page.hasMore ? page.cursor : undefined;
+    } while (cursor);
+    return n;
   }
 }
 

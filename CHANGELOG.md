@@ -10,6 +10,7 @@
 - **Live team editing** between phones/laptops (WebRTC via PeerJS): edits, undo and media sync, host keeps the master copy.
 - **Reel styles** (9): anime dialogue, POV story, aesthetic detail, hook montage, quote reveal, talking head + CTA, scenic lyric, dream card, lyric card. 7 new motion templates and text fit-to-width.
 - **Video stabiliser** (own algorithm), **HD enhance**, **AI photo upscale ×2** (Swin2SR) and **English AI voice** (SpeechT5).
+- **Auto-delete after 30 days** for online files (uploads, shares, cloud backups, renders), checked at most every 12 hours on upload, so the free 1 GB Blob limit does not fill up.
 - `.claude/skills/reel-editor`: playbook for analysing and recreating reel formats.
 
 ## 0.5.0 — Phase 5: library, licences, backups (no server)
