@@ -31,7 +31,7 @@ always produce the same result.
 | `packages/ui` | The Just See icon set |
 | `apps/web` | Next.js app (static export), editor UI, on-device storage, preview player, PWA |
 
-Planned: `apps/mcp-server`, `apps/render-worker` (Phase 6), `packages/dsp` (Rust → WASM, Phase 3).
+Also: `apps/api` (Phase 6: share links, connector, render jobs; one free Vercel Function), `packages/dsp` (Rust → WASM, Phase 3).
 
 ## Project document
 
@@ -60,7 +60,7 @@ rules are applied by `normalizeMainTrack` after every command.
 - `applyCommand(project, command)` is pure. It validates the payload with Zod, applies it to a copy, and returns the new project plus an **inverse** command (`internal/restore` with the previous state of only the parts that changed).
 - `history.ts` keeps `past`/`future` stacks of `{command, inverse}`. Undo applies the inverse; redo replays the command. Unlimited in practice (500 steps in memory; older states live in version history).
 - During a drag, the UI calls `preview(command)` to show the result without recording it, then dispatches the final command once on release, so one gesture = one undo step.
-- The MCP connector (Phase 6) will call the same `applyCommand`.
+- The MCP connector (Phase 6) edits recipes that the browser turns into the same commands.
 
 **Autosave** (`apps/web/src/lib/autosave.ts`): every committed change is written to IndexedDB after 350 ms, and immediately when the tab is hidden or closed. **Crash recovery** is therefore just "open the project": the last saved state loads. **Version history** keeps an automatic snapshot every 3 minutes of editing plus manual "Save version", 30 per project.
 
@@ -160,6 +160,24 @@ Known Phase 1 limits:
 - **Fonts**: `project.fonts` lists Google fonts; `ensureProjectFonts` loads them on open and before export. When a font finishes loading the text raster caches are invalidated (`bumpFontEpoch`).
 - **Backups** (`lib/backup.ts`): `.justsee` = stored ZIP with `project.json`, `manifest.json` and `media/<assetId>`. Restoring writes media to OPFS/IndexedDB and saves the project under a new id when needed. This replaces accounts and cloud sync, so there is still no server.
 
+## Phase 6 additions (connector, sharing, live)
+
+- **API** (`apps/api`): one Vercel Function built with the Build Output API (`build.mjs`), plain Node handlers in `src/app.ts`. Storage is Vercel Blob (`BlobStore`) in production and a folder (`FsStore`) in dev/tests. Routes: `/api/config`, `/api/upload` (Blob client uploads), `/api/share`, `/api/recipes/:id`, `/api/jobs/:id`, `/api/report`, `/api/mcp/<key>`.
+- **Connector** (`src/mcp.ts`): MCP server over Streamable HTTP (stateless). Tools edit a high-level **recipe** (`packages/schema/src/recipe.ts`), not the project directly. `render_video` creates a job; the browser that opens `/render` builds the project from the recipe with the normal editor code, exports and uploads the MP4. So "server render" costs nothing.
+- **Auto-delete**: files older than 30 days are removed on upload (checked at most every 12 h, marker in `meta/`), so the free 1 GB Blob limit does not fill.
+- **Live editing** (`lib/live.ts`): PeerJS (WebRTC). The host holds the master copy; commands are broadcast, a hash check resyncs, media is sent in chunks.
+- **Heavy tools**: stabiliser (block matching + path smoothing, `engine/src/analysis/stabilize.ts`), HD enhance (shaders), Swin2SR ×2 and SpeechT5 via transformers.js on the device.
+
+## Phase 7 additions (polish)
+
+- **Code splitting**: Studio, Motion, Library, Export, captions, audio panels and live editing load on first use (`React.lazy`). Their open/close state lives in `lib/ui-stores.ts` so the editor does not import the screens. Workspace packages are `sideEffects: false`.
+- **Preview speed**: video textures are re-uploaded only when the browser reports a new frame (`requestVideoFrameCallback`). During playback the preview drops its resolution (down to 50 %) when a frame takes over 22 ms and climbs back when there is room; pause restores full quality. `PreviewPlayer.stats()` reports fps, render time and scrub latency.
+- **Timeline**: rows are memoised, so vertical scrolling and playhead moves do not re-render clips (53 tracks scroll at 60 fps).
+- **Speed test** on `/diagnostics` (`lib/speed-test.ts`): the README preview budget (3 layers + effect at the 1080p preview size) measured on the user's own device.
+- **Accessibility**: in-house audit (`e2e/a11y.ts`) for control names, image alt text and WCAG AA contrast, run on every main screen in both themes; Esc closes full-screen editors.
+- **Onboarding**: Quick reel (`lib/quickstart.ts`) and three first-run tips.
+- **Usage and crashes** (`lib/telemetry.ts`): counters and crash reports kept in `localStorage`, scrubbed of file names, links and emails. Uploaded only when the user taps Send on `/diagnostics`.
+
 ## Web app
 
 - Next.js App Router, **static export** (`output: "export"`). Everything runs on the device; no server is needed in Phase 1.
@@ -174,4 +192,5 @@ Known Phase 1 limits:
 
 - `packages/schema`: commands, ripple/trim/split math, transitions, undo/redo round-trips, validation, frame math, snapping.
 - `packages/engine`: frame resolver, text animation, audio mix, layout matrices, rotation, catalogs, codec selection.
-- `apps/web/e2e` (Playwright, Pixel 7 emulation): smoke + shader compile, editing flow with autosave/reload, transitions, and the Phase 1 acceptance test (60 s 9:16 reel with 5 clips, text and music, exported and checked with ffprobe and pixel comparisons).
+- `apps/web/e2e` (Playwright, Pixel 7 emulation): smoke + shader compile, editing flow with autosave/reload, transitions, and the Phase 1 acceptance test (60 s 9:16 reel with 5 clips, text and music, exported and checked with ffprobe and pixel comparisons). One spec per later phase; Phase 7 adds performance budgets, the accessibility audit, onboarding timing and crash reports.
+- `apps/api/test`: connector flow, share links, crash reports, 30-day cleanup.

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.7.0 — Phase 7: polish (speed, accessibility, onboarding, crash reports)
+
+### Added
+
+- **Quick reel** on the home screen: pick videos, get a 9:16 reel (up to 30 s) with mood music and Export open. First edit done in about 6 s in tests.
+- **First-run tips** (3 steps, shown once).
+- **Overlay** button: put a video or photo on top as picture-in-picture.
+- **Speed test** on the Device check page, to check the 30 fps preview goal on your own phone.
+- **Problems & usage** on the Device check page: crashes and feature counts stay on the phone; a report is uploaded only if you tap Send.
+- Esc closes Library, Studio and Motion.
+
+### Changed
+
+- Editor starts faster: big screens load when first opened (editor download 431 → 357 kB compressed).
+- Smoother preview: unchanged video frames are not re-uploaded, and playback lowers preview resolution on slow phones (full quality when paused).
+- Timeline with 50+ tracks scrolls at 60 fps.
+- Light theme: dark text on orange buttons, stronger clip labels and link colour (WCAG AA).
+
 ## 0.6.0 — Phase 6: connector, sharing, live editing, reel styles
 
 ### Added

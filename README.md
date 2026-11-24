@@ -229,7 +229,7 @@ Phases are built strictly in order. A phase is done only when its check passes.
 | 4 | **Motion studio**: layers, keyframes, graph editor, shapes, text animators, effects, Lottie | An animated lower-third and a logo reveal can be built and dropped into a video | ✅ Done ([status](docs/phase4-status.md)) |
 | 5 | **Assets, templates, accounts, cloud sync** | One search covers fonts, music and SFX, and every asset carries license data | ✅ Done, without a server ([status](docs/phase5-status.md)) |
 | 6 | **Claude connector + server render** | Claude, using only the connector, turns 3 clips into a captioned 30 s reel and returns a download link | ✅ Done, rendered in the browser instead of a paid server ([status](docs/phase6-status.md)) |
-| 7 | **Polish**: performance, accessibility, onboarding, analytics, crash reporting | All performance budgets met | ⬜ |
+| 7 | **Polish**: performance, accessibility, onboarding, analytics, crash reporting | All performance budgets met | ✅ Done; the GPU preview goal is checked on a real phone with the Speed test ([status](docs/phase7-status.md)) |
 
 > 💰 Phases 2 and 3 were built to run free in the browser (captions, background removal and stems run on the device). Only Phase 6 (server render) may need a paid server; budget gets decided before it starts.
 

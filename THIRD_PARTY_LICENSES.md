@@ -4,6 +4,10 @@ Every dependency used by Just See, with its license. Only permissive licenses
 (MIT, Apache-2.0, BSD, ISC; OFL for fonts) are allowed inside the product.
 GPL/AGPL code is not allowed. Update this file whenever a dependency changes.
 
+Phase 7 added no dependencies. The accessibility audit used in tests is our own
+code; axe-core (MPL-2.0) was not used. There is no third-party analytics or
+crash-reporting service: usage counts and crash reports stay on the device.
+
 ## Shipped in the app (runtime)
 
 | Package | Version | License | Used for |
