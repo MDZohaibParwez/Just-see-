@@ -19,8 +19,22 @@ GPL/AGPL code is not allowed. Update this file whenever a dependency changes.
 | [@huggingface/transformers](https://github.com/huggingface/transformers.js) | 4.3.2 | Apache-2.0 | Whisper speech recognition in the browser (auto captions) |
 | [onnxruntime-web](https://github.com/microsoft/onnxruntime) | (via transformers) | MIT | Runs the Whisper model (wasm/WebGPU) |
 | [@mediapipe/tasks-vision](https://github.com/google-ai-edge/mediapipe) | 1.2.3 | Apache-2.0 | Person segmentation (AI background removal) |
+| [peerjs](https://github.com/peers/peerjs) | 1.5.5 | MIT | Live team editing (WebRTC between devices; free PeerJS broker only introduces them) |
+| [@vercel/blob](https://github.com/vercel/storage) | 2.9.0 | Apache-2.0 | Uploads for share links, cloud backups and connector media |
+
+### API (apps/api, one Vercel Function)
+
+| Package | Version | License | Used for |
+| --- | --- | --- | --- |
+| [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk) | 1.32.2 | MIT | Claude / ChatGPT connector (MCP server) |
+| [@vercel/blob](https://github.com/vercel/storage) | 2.9.0 | Apache-2.0 | File and JSON storage |
+| [mp4box](https://github.com/gpac/mp4box.js) | 2.6.0 | BSD-3-Clause | Reading clip lengths |
+| [esbuild](https://github.com/evanw/esbuild) (build only) | 0.28.2 | MIT | Bundling the function |
+| [peer](https://github.com/peers/peerjs-server) (tests only) | 1.0.2 | MIT | Local broker for live-editing tests |
 
 ### AI models (downloaded at runtime, not bundled)
+
+Added in Phase 6: [Xenova/swin2SR-classical-sr-x2-64](https://huggingface.co/Xenova/swin2SR-classical-sr-x2-64) (Apache-2.0, AI photo upscale ×2) and [Xenova/speecht5_tts](https://huggingface.co/Xenova/speecht5_tts) from [microsoft/speecht5_tts](https://huggingface.co/microsoft/speecht5_tts) (MIT, English AI voice). Rejected: Open-Unmix UMX-L ONNX stems (weights are non-commercial upstream) and MMS-TTS Hindi (CC BY-NC).
 
 | Model | Source | License |
 | --- | --- | --- |

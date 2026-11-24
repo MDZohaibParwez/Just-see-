@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.0 — Phase 6: connector, sharing, live editing, reel styles
+
+### Added
+
+- **Claude / ChatGPT connector (MCP)** at `https://just-see-api.vercel.app/api/mcp/<key>`. Tools to create a video, add clips by link or via an upload page, trim, captions, text, music, sound effects, effects, studio voice, motion templates, reel styles, fit duration, render and get the download link. Videos are built and rendered in the browser that opens the render link, so the server stays free.
+- **Free API** (`apps/api`): one Vercel Function + Vercel Blob for share links, cloud backups, connector recipes and render jobs; a local folder in dev/tests.
+- **Share a copy** by link, **cloud backup** links, backup reminder, Install-app prompt and an iPhone "Add to Home Screen" guide.
+- **Live team editing** between phones/laptops (WebRTC via PeerJS): edits, undo and media sync, host keeps the master copy.
+- **Reel styles** (9): anime dialogue, POV story, aesthetic detail, hook montage, quote reveal, talking head + CTA, scenic lyric, dream card, lyric card. 7 new motion templates and text fit-to-width.
+- **Video stabiliser** (own algorithm), **HD enhance**, **AI photo upscale ×2** (Swin2SR) and **English AI voice** (SpeechT5).
+- `.claude/skills/reel-editor`: playbook for analysing and recreating reel formats.
+
 ## 0.5.0 — Phase 5: library, licences, backups (no server)
 
 ### Added
