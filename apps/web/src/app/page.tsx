@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@just-see/ui";
 import { createProject, formatTimecode, type AspectPreset } from "@just-see/schema";
 import { Prefs } from "@/components/Prefs";
+import { DataSafety } from "@/components/DataSafety";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { deleteProject, kvGet, listProjects, saveProject, type ProjectRecord } from "@/lib/storage/db";
 import { requestPersistentStorage } from "@/lib/storage/media-store";
@@ -108,6 +109,7 @@ export default function Home() {
         </div>
       </section>
 
+      <DataSafety />
       <label className="mt-4 flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-line p-3 text-sm text-muted">
         <Icon name="folder" size={18} />
         {t("backupOpen")}
