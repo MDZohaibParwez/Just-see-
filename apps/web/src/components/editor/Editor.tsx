@@ -64,6 +64,62 @@ function LiveGate() {
   ) : null;
 }
 
+const TIPS = ["tip1", "tip2", "tip3"] as const;
+
+/** Three short first-run tips, shown once per device. Not a modal: editing still works. */
+function FirstRunTips() {
+  const t = useT();
+  const [step, setStep] = useState<number>(() => {
+    try {
+      return localStorage.getItem("js.tipsDone") ? -1 : 0;
+    } catch {
+      return -1;
+    }
+  });
+  if (step < 0) return null;
+  const done = () => {
+    try {
+      localStorage.setItem("js.tipsDone", "1");
+    } catch {
+      // private mode: tips show again next time, that is fine
+    }
+    setStep(-1);
+  };
+  const last = step === TIPS.length - 1;
+  return (
+    <div className="flex items-center gap-2 border-t border-line bg-surface-2 px-3 py-2 text-sm" role="status" data-testid="first-run-tip">
+      <span className="shrink-0 rounded-full bg-accent px-2 text-xs font-semibold text-accent-contrast">
+        {step + 1}/{TIPS.length}
+      </span>
+      <span className="min-w-0 flex-1">{t(TIPS[step]!)}</span>
+      <button type="button" className="shrink-0 rounded-full px-3 py-1 font-medium text-fg hover:bg-surface-3" data-testid="tip-next" onClick={() => (last ? done() : setStep(step + 1))}>
+        {last ? t("tipDone") : t("tipNext")}
+      </button>
+      {!last && (
+        <button type="button" aria-label={t("tipDone")} className="shrink-0 rounded-full p-1 text-muted hover:bg-surface-3" onClick={done}>
+          ✕
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Quick reel from the home screen: build it, then open Export. */
+function useQuickReel() {
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has("quick")) return;
+    void import("@/lib/quickstart").then(async (m) => {
+      const files = m.takeQuickFiles();
+      if (!files.length) return;
+      await m.buildQuickReel(files);
+      const s = useEditor.getState();
+      const { translate, useLocale } = await import("@/lib/i18n");
+      s.toast(translate(useLocale.getState().locale, "quickReelReady"));
+      s.openPanel("export");
+    });
+  }, []);
+}
+
 function Screens() {
   const studio = useStudioUi((s) => s.openId !== null);
   const motion = useMotionUi((s) => s.openId !== null);
@@ -171,6 +227,7 @@ export function Editor() {
   const desktop = useMediaQuery("(min-width: 1024px)");
 
   useEffect(() => startAutosave(), []);
+  useQuickReel();
 
   // Keyboard shortcuts for desktop.
   useEffect(() => {
@@ -254,6 +311,7 @@ export function Editor() {
             <Timeline onAddMedia={() => mediaInput.current?.click()} />
           </div>
           {hasPanel && !desktop && <ActivePanel />}
+          {!hasPanel && <FirstRunTips />}
           {(!hasPanel || desktop) && (
             <Toolbar onImport={() => mediaInput.current?.click()} onImportMusic={() => musicInput.current?.click()} />
           )}

@@ -46,6 +46,17 @@ export default function Home() {
     router.push(`/edit/?id=${encodeURIComponent(p.id)}`);
   };
 
+  const quickReel = async (files: File[]) => {
+    if (busy) return;
+    setBusy(true);
+    void requestPersistentStorage();
+    const { setQuickFiles } = await import("@/lib/quickstart");
+    setQuickFiles(files);
+    const p = createProject({ aspect: "9:16", name: t("quickReel") });
+    await saveProject(p);
+    router.push(`/edit/?id=${encodeURIComponent(p.id)}&quick=1`);
+  };
+
   const remove = async (id: string) => {
     if (!window.confirm(t("deleteConfirm"))) return;
     await deleteProject(id);
@@ -82,6 +93,30 @@ export default function Home() {
           <Icon name="play" />
         </button>
       )}
+
+      <section className="mt-5 rounded-2xl border border-accent/60 bg-accent/10 p-4" aria-labelledby="quick-h">
+        <h2 id="quick-h" className="text-lg font-semibold">
+          ⚡ {t("quickReel")}
+        </h2>
+        <p className="mb-3 mt-1 text-sm text-muted">{t("quickReelHint")}</p>
+        <label className={`flex h-12 cursor-pointer items-center justify-center gap-2 rounded-xl bg-accent font-semibold text-accent-contrast ${busy ? "opacity-60" : ""}`}>
+          <Icon name="media" size={20} />
+          {t("quickReelPick")}
+          <input
+            type="file"
+            accept="video/*,image/*"
+            multiple
+            hidden
+            disabled={busy}
+            data-testid="quick-reel-input"
+            onChange={(e) => {
+              const files = Array.from(e.currentTarget.files ?? []);
+              e.currentTarget.value = "";
+              if (files.length) void quickReel(files);
+            }}
+          />
+        </label>
+      </section>
 
       <section className="mt-6" aria-labelledby="new-h">
         <h2 id="new-h" className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">
