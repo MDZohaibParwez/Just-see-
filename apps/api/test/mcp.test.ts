@@ -23,6 +23,8 @@ function listen(s: http.Server): Promise<string> {
 beforeAll(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "jsapi-"));
   files = http.createServer((req, res) => {
+    if (req.url === "/huge.mp4") return void res.writeHead(200, { "content-type": "video/mp4", "content-length": String(2 * 1024 * 1024 * 1024) }).end();
+    if (req.url === "/private") return void res.writeHead(200, { "content-type": "text/html" }).end("<html>sign in</html>");
     const f = path.join(FIX, path.basename(req.url ?? ""));
     if (!fs.existsSync(f)) return void res.writeHead(404).end();
     res.writeHead(200, { "content-type": f.endsWith(".mp4") ? "video/mp4" : f.endsWith(".png") ? "image/png" : "audio/mpeg" });
@@ -104,6 +106,20 @@ describe("connector (MCP)", () => {
     expect(textOf(await c.callTool({ name: "delete_video", arguments: { video_id: id } }))).toContain("1 clip");
     expect(fs.existsSync(path.join(dir, "media", id))).toBe(false);
     expect((await c.callTool({ name: "get_video", arguments: { video_id: id } }) as { isError?: boolean }).isError).toBe(true);
+    await c.close();
+  });
+
+  it("streams files without a known size, refuses over 900 MB and explains private links", async () => {
+    const c = await client();
+    const id = /Created video ([a-z0-9]+)/.exec(textOf(await c.callTool({ name: "create_video", arguments: {} })))![1]!;
+    // The test file server sends no content-length, so this takes the streaming path.
+    const ok = textOf(await c.callTool({ name: "add_media", arguments: { video_id: id, url: `${fileBase}/clip2.mp4` } }));
+    expect(ok).toMatch(/Added video m\w+ .*\(12\.\d+ s\)/);
+    const huge = await c.callTool({ name: "add_media", arguments: { video_id: id, url: `${fileBase}/huge.mp4` } });
+    expect((huge as { isError?: boolean }).isError).toBe(true);
+    expect(textOf(huge)).toContain("limit is 900 MB");
+    const priv = await c.callTool({ name: "add_media", arguments: { video_id: id, url: `${fileBase}/private` } });
+    expect(textOf(priv)).toContain("web page");
     await c.close();
   });
 

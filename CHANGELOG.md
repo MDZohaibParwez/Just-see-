@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.2 — Connector: files up to 900 MB, server stays safe
+
+### Changed
+
+- Clips up to **900 MB** (was 300 MB). Big files stream straight from Drive into storage, so the server never holds them in memory; length is read from small pieces of the file.
+- Files added on the upload page are used where they are (no second copy) and are deleted after the render too.
+- Storage guard: a download that would push storage past ~950 MB is refused with a clear message (after first clearing clips of projects not rendered in 2 days), so the free 1 GB is never exceeded.
+- Clips of projects that are never rendered are removed after 2 days.
+
 ## 0.7.1 — Connector: Google Drive clips, auto-delete after render
 
 ### Added

@@ -80,3 +80,44 @@ export async function probe(bytes: Uint8Array, contentType = "", name = ""): Pro
   }
   return out;
 }
+
+/**
+ * Probe a big stored MP4/MOV without loading it: read 1 MB pieces where the
+ * parser asks for them. mp4box skips the media data box, so only the start
+ * and the "moov" index are read (phone videos often keep it at the end).
+ */
+export async function probeStored(read: (start: number, end: number) => Promise<Uint8Array>, size: number, head: Uint8Array, contentType = "", name = ""): Promise<Probe> {
+  const kind = sniffKind(head, contentType, name);
+  const out: Probe = { kind, durationSec: null, width: null, height: null };
+  if (kind !== "video" && !(kind === "audio" && String.fromCharCode(...head.subarray(4, 8)) === "ftyp")) return out;
+  const info = await new Promise<Movie | null>((resolve) => {
+    const f = createFile();
+    let result: Movie | null = null;
+    f.onReady = (i: Movie) => {
+      result = i;
+    };
+    f.onError = () => undefined;
+    void (async () => {
+      let pos = 0;
+      const chunk = 1024 * 1024;
+      for (let guard = 0; !result && pos < size && guard < 400; guard++) {
+        const bytes = await read(pos, Math.min(size, pos + chunk));
+        if (!bytes.length) break;
+        const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+        const next = f.appendBuffer(MP4BoxBuffer.fromArrayBuffer(ab, pos), pos + bytes.length >= size);
+        pos = typeof next === "number" && next > pos ? next : pos + bytes.length;
+      }
+      if (!result) f.flush();
+      resolve(result);
+    })().catch(() => resolve(null));
+  });
+  if (info) {
+    out.durationSec = info.timescale ? Math.round((info.duration / info.timescale) * 1000) / 1000 : null;
+    const v = info.videoTracks?.[0];
+    if (v) {
+      out.width = v.video?.width ?? v.track_width ?? null;
+      out.height = v.video?.height ?? v.track_height ?? null;
+    }
+  }
+  return out;
+}

@@ -13,8 +13,8 @@ import { TEMPLATES } from "../../../packages/engine/src/motion/templates";
 import { TRANSITIONS } from "../../../packages/engine/src/transitions/catalog";
 import { EFFECTS } from "../../../packages/engine/src/effects/catalog";
 import { REEL_STYLES, REEL_STYLE_BY_ID, styleGuide } from "../../../packages/engine/src/styles/reel-styles";
-import { probe } from "./probe";
-import type { Store } from "./store";
+import { probe, probeStored, sniffKind } from "./probe";
+import { MEDIA_KEEP_MS, STORAGE_LIMIT, type Store } from "./store";
 
 export interface Ctx {
   store: Store;
@@ -59,7 +59,11 @@ function describe(r: Recipe): string {
   return lines.join("\n");
 }
 
-const MAX_BYTES = 300 * 1024 * 1024;
+/** Largest file the connector accepts. */
+export const MAX_BYTES = 900 * 1024 * 1024;
+/** Up to this size files are checked in memory; bigger ones stream straight to storage. */
+const SMALL_BYTES = 64 * 1024 * 1024;
+const MB = 1024 * 1024;
 
 /**
  * Share links from cloud drives point at a web page, not the file. Turn them
@@ -94,31 +98,43 @@ function nameFromHeaders(res: Response, fallback: string): string {
   return (raw ?? fallback).replace(/[\\/\r\n]/g, "_").slice(0, 300) || fallback;
 }
 
-export async function fetchMedia(url: string): Promise<{ bytes: Uint8Array; type: string; name: string }> {
+/** Open a download (cloud drive links resolved). The caller reads the body. */
+async function openDownload(url: string): Promise<{ res: Response; size: number | null; type: string; name: string }> {
   const first = new URL(url);
   if (!/^https?:$/.test(first.protocol)) throw new Error("Only http(s) links are supported");
   const direct = directDownloadUrl(url);
   const u = new URL(direct.url);
   const res = await fetch(u, { redirect: "follow" });
   if (!res.ok || !res.body) {
-    if (direct.source === "google-drive" && (res.status === 403 || res.status === 404)) throw new Error("Google Drive did not share the file. In Drive: Share → General access → \"Anyone with the link\", then try again.");
+    if (direct.source === "google-drive" && (res.status === 403 || res.status === 404)) throw new Error('Google Drive did not share the file. In Drive: Share → General access → "Anyone with the link", then try again.');
     throw new Error(`Could not download (${res.status})`);
   }
   // A web page instead of the file: the link is private or needs a sign-in.
   if (/text\/html/i.test(res.headers.get("content-type") ?? "")) {
     await res.body.cancel().catch(() => undefined);
-    throw new Error(direct.source === "google-drive" ? "Google Drive asked for a sign-in. In Drive: Share → General access → \"Anyone with the link\", then try again." : "The link opens a web page, not a file. Use a direct download link.");
+    throw new Error(direct.source === "google-drive" ? 'Google Drive asked for a sign-in. In Drive: Share → General access → "Anyone with the link", then try again.' : "The link opens a web page, not a file. Use a direct download link.");
   }
   const len = Number(res.headers.get("content-length") ?? 0);
-  if (len > MAX_BYTES) throw new Error("File is larger than 300 MB");
+  if (len > MAX_BYTES) {
+    await res.body.cancel().catch(() => undefined);
+    throw new Error(`File is ${Math.round(len / MB)} MB; the limit is ${MAX_BYTES / MB} MB. Trim or compress it first.`);
+  }
+  const fallback = direct.source === "link" ? decodeURIComponent(u.pathname.split("/").pop() || "media") : "media";
+  return { res, size: len || null, type: res.headers.get("content-type") ?? "", name: nameFromHeaders(res, fallback) };
+}
+
+async function readAll(body: ReadableStream<Uint8Array>, limit: number): Promise<Uint8Array> {
   const chunks: Uint8Array[] = [];
   let total = 0;
-  const reader = res.body.getReader();
+  const reader = body.getReader();
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     total += value.length;
-    if (total > MAX_BYTES) throw new Error("File is larger than 300 MB");
+    if (total > limit) {
+      await reader.cancel().catch(() => undefined);
+      throw new Error(`File is larger than ${Math.round(limit / MB)} MB`);
+    }
     chunks.push(value);
   }
   const bytes = new Uint8Array(total);
@@ -127,8 +143,89 @@ export async function fetchMedia(url: string): Promise<{ bytes: Uint8Array; type
     bytes.set(c, o);
     o += c.length;
   }
-  const fallback = direct.source === "link" ? decodeURIComponent(u.pathname.split("/").pop() || "media") : "media";
-  return { bytes, type: res.headers.get("content-type") ?? "", name: nameFromHeaders(res, fallback) };
+  return bytes;
+}
+
+/** Make room for `size` more bytes: drop unrendered clips older than 2 days, then check the free limit. */
+async function ensureRoom(ctx: Ctx, size: number): Promise<void> {
+  if (ctx.store.mode !== "blob") return;
+  let used = await ctx.store.usage();
+  if (used + size <= STORAGE_LIMIT) return;
+  await ctx.store.cleanup(MEDIA_KEEP_MS, Date.now(), "media/");
+  used = await ctx.store.usage();
+  if (used + size > STORAGE_LIMIT) {
+    throw new Error(`Online storage is nearly full (${Math.round(used / MB)} MB used of ~${Math.round(STORAGE_LIMIT / MB)} MB). Render or delete earlier projects first (delete_video), then try again.`);
+  }
+}
+
+/** A file the user already uploaded into our storage: use it in place (no copy, no full read). */
+export async function addStoredMedia(ctx: Ctx, r: Recipe, pathname: string, contentType: string, name: string, kindHint?: string): Promise<Recipe["media"][number]> {
+  const head = await ctx.store.readRange(pathname, 0, 64 * 1024);
+  if (!head.length) throw new Error("Uploaded file not found");
+  const kind = (kindHint as "video" | "image" | "audio" | undefined) ?? sniffKind(head, contentType, name);
+  if (!kind) throw new Error("Unknown file type: use a video, image or audio file");
+  let durationSec: number | null = kind === "image" ? 0 : null;
+  if (kind !== "image") {
+    const size = await ctx.store.sizeOf(pathname);
+    const p = await probeStored((a, b) => ctx.store.readRange(pathname, a, b), size, head, contentType, name).catch(() => null);
+    durationSec = p?.durationSec ?? null;
+  }
+  const m = { id: `m${r.media.length + 1}${newId(4)}`, url: ctx.store.urlOf(pathname), kind, name: name.slice(0, 300), durationSec, license: null };
+  r.media.push(m);
+  return m;
+}
+
+/**
+ * Download a link into a project. Small files are checked in memory; big ones
+ * (up to 900 MB) stream straight into storage so the server never holds them.
+ */
+export async function addMediaFromUrl(ctx: Ctx, r: Recipe, url: string, name?: string, kindHint?: string): Promise<Recipe["media"][number]> {
+  const d = await openDownload(url);
+  const body = d.res.body!;
+  if (d.size !== null && d.size <= SMALL_BYTES) {
+    await ensureRoom(ctx, d.size);
+    return addMediaBytes(ctx, r, await readAll(body, SMALL_BYTES), d.type, name ?? d.name, kindHint);
+  }
+  await ensureRoom(ctx, d.size ?? MAX_BYTES);
+  // Peek at the first bytes to know the file type, then stream everything on.
+  const reader = body.getReader();
+  const first = await reader.read();
+  const head = first.value ?? new Uint8Array(0);
+  const fileName = (name ?? d.name).slice(0, 300);
+  const kind = (kindHint as "video" | "image" | "audio" | undefined) ?? sniffKind(head, d.type, fileName);
+  if (!kind) {
+    await reader.cancel().catch(() => undefined);
+    throw new Error("Unknown file type: use a video, image or audio file");
+  }
+  let total = 0;
+  const stream = new ReadableStream<Uint8Array>({
+    start(c) {
+      if (head.length) {
+        total += head.length;
+        c.enqueue(head);
+      }
+      if (first.done) c.close();
+    },
+    async pull(c) {
+      const { done, value } = await reader.read();
+      if (done) return c.close();
+      total += value.length;
+      if (total > MAX_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        return c.error(new Error(`File is larger than ${MAX_BYTES / MB} MB. Trim or compress it first.`));
+      }
+      c.enqueue(value);
+    },
+    cancel: () => reader.cancel(),
+  });
+  const id = `m${r.media.length + 1}${newId(4)}`;
+  const ext = (fileName.match(/\.([a-z0-9]{2,5})$/i)?.[1] ?? (kind === "video" ? "mp4" : kind === "image" ? "png" : "mp3")).toLowerCase();
+  const pathname = `media/${r.id}/${id}.${ext}`;
+  const stored = await ctx.store.putBytes(pathname, stream, d.type || (kind === "video" ? "video/mp4" : kind === "audio" ? "audio/mpeg" : "image/png"));
+  const p = await probeStored((a, b) => ctx.store.readRange(pathname, a, b), total, head, d.type, fileName).catch(() => null);
+  const m = { id, url: stored, kind, name: fileName, durationSec: p?.durationSec ?? null, license: null };
+  r.media.push(m);
+  return m;
 }
 
 /** Add a downloaded or uploaded file to a recipe (shared by the MCP tool and the upload page). */
@@ -173,7 +270,7 @@ export function buildMcpServer(ctx: Ctx): McpServer {
     { name: "just-see", version: "0.6.0" },
     {
       instructions:
-        "Just See edits videos. Clips can come from Google Drive: ask the user for the file's Share link (General access: Anyone with the link) and pass it to add_media; files up to 300 MB work. Source clips are deleted from Just See's storage after the render is saved. For popular Reels formats (anime dialogue, POV story with notification, aesthetic detail, hook + lyric montage, quote reveal, talking head + captions + CTA, scenic lyric montage, dream card, minimal lyric card) call list_styles / get_style_guide and apply_style after adding clips. Typical flow: create_video → add_media (public links) or give the user get_upload_link to add phone clips → list_media to see lengths → add_clip for each clip in order (with trims) → add_captions / add_text / add_music / add_sound_effect / add_motion_template → fit_duration if needed → render_video. Give the user the render link: opening it renders the video in their browser and saves it; then get_render returns the MP4 download link. Use list_options to see sound effects, moods, transitions, effects and templates.",
+        "Just See edits videos. Clips can come from Google Drive: ask the user for the file's Share link (General access: Anyone with the link) and pass it to add_media; files up to 900 MB work. Source clips are deleted from Just See's storage after the render is saved. For popular Reels formats (anime dialogue, POV story with notification, aesthetic detail, hook + lyric montage, quote reveal, talking head + captions + CTA, scenic lyric montage, dream card, minimal lyric card) call list_styles / get_style_guide and apply_style after adding clips. Typical flow: create_video → add_media (public links) or give the user get_upload_link to add phone clips → list_media to see lengths → add_clip for each clip in order (with trims) → add_captions / add_text / add_music / add_sound_effect / add_motion_template → fit_duration if needed → render_video. Give the user the render link: opening it renders the video in their browser and saves it; then get_render returns the MP4 download link. Use list_options to see sound effects, moods, transitions, effects and templates.",
     },
   );
 
@@ -196,13 +293,12 @@ export function buildMcpServer(ctx: Ctx): McpServer {
     "add_media",
     {
       title: "Add media from a link",
-      description: "Add a video, image or audio file to the project from a link: Google Drive share links (\"Anyone with the link\"), Dropbox, OneDrive or any direct http(s) link. Up to 300 MB. Returns a media id and its length.",
+      description: "Add a video, image or audio file to the project from a link: Google Drive share links (\"Anyone with the link\"), Dropbox, OneDrive or any direct http(s) link. Up to 900 MB. Returns a media id and its length.",
       inputSchema: { video_id: z.string(), url: z.string().url(), name: z.string().max(300).optional(), kind: z.enum(["video", "image", "audio"]).optional() },
     },
     async ({ video_id, url, name, kind }) =>
       withRecipe(ctx, video_id, async (r) => {
-        const f = await fetchMedia(url);
-        const m = await addMediaBytes(ctx, r, f.bytes, f.type, name ?? f.name, kind);
+        const m = await addMediaFromUrl(ctx, r, url, name, kind);
         return `Added ${m.kind} ${m.id} "${m.name}"${m.durationSec != null ? ` (${m.durationSec.toFixed(1)} s)` : ""}.`;
       }),
   );

@@ -5,7 +5,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { RenderJobSchema, type RenderJob } from "@just-see/schema";
-import { addMediaBytes, buildMcpServer, links, loadRecipe, newId, saveRecipe, type Ctx } from "./mcp";
+import { MAX_BYTES, addStoredMedia, buildMcpServer, links, loadRecipe, newId, saveRecipe, type Ctx } from "./mcp";
 import { FsStore, assertSafePath, maybeCleanup } from "./store";
 
 const MAX_JSON = 1024 * 1024;
@@ -97,7 +97,7 @@ export async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx
         request: req as unknown as Request,
         onBeforeGenerateToken: async (pathname) => {
           if (!/^(uploads|renders|shares)\//.test(pathname)) throw new Error("Bad pathname");
-          return { maximumSizeInBytes: 1024 * 1024 * 1024, addRandomSuffix: true, allowedContentTypes: ["video/*", "audio/*", "image/*", "application/zip", "application/octet-stream", "application/json"] };
+          return { maximumSizeInBytes: MAX_BYTES, addRandomSuffix: true, allowedContentTypes: ["video/*", "audio/*", "image/*", "application/zip", "application/octet-stream", "application/json"] };
         },
         onUploadCompleted: async () => undefined,
       });
@@ -146,10 +146,9 @@ export async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx
       if (req.method === "POST" && sub === "media") {
         const b = await readJson<{ url?: string; name?: string; kind?: string; contentType?: string }>(req);
         if (!b.url || !isOurUrl(ctx, b.url)) return send(res, 400, { error: "Upload the file first" });
-        const f = await fetch(b.url);
-        if (!f.ok) return send(res, 400, { error: "Uploaded file not found" });
-        const bytes = new Uint8Array(await f.arrayBuffer());
-        const m = await addMediaBytes(ctx, r, bytes, b.contentType ?? f.headers.get("content-type") ?? "", String(b.name ?? "clip"), b.kind);
+        // Use the uploaded file where it is: no copy, and big files are never read whole.
+        const pathname = assertSafePath(decodeURIComponent(new URL(b.url).pathname.replace(/^\/(files\/)?/, "")));
+        const m = await addStoredMedia(ctx, r, pathname, b.contentType ?? "", String(b.name ?? "clip"), b.kind);
         await saveRecipe(ctx.store, r);
         return send(res, 200, { media: m });
       }
@@ -171,7 +170,15 @@ export async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx
         const next = RenderJobSchema.parse({ ...job, status: b.status ?? job.status, outputUrl: b.url ?? job.outputUrl, error: b.error ?? null, updatedAt: Date.now() });
         await ctx.store.putJson(`jobs/${id}.json`, next);
         // The MP4 is saved: the source clips are no longer needed online.
-        if (next.status === "done" && job.status !== "done" && next.deleteMedia) await ctx.store.deletePrefix(`media/${job.recipeId}/`).catch(() => 0);
+        if (next.status === "done" && job.status !== "done" && next.deleteMedia) {
+          await ctx.store.deletePrefix(`media/${job.recipeId}/`).catch(() => 0);
+          // Clips added through the upload page live under uploads/.
+          const r = await loadRecipe(ctx.store, job.recipeId);
+          for (const m of r?.media ?? []) {
+            const p = isOurUrl(ctx, m.url) ? decodeURIComponent(new URL(m.url).pathname.replace(/^\/(files\/)?/, "")) : "";
+            if (p.startsWith("uploads/")) await ctx.store.deletePrefix(assertSafePath(p)).catch(() => 0);
+          }
+        }
         return send(res, 200, { ok: true });
       }
     }
