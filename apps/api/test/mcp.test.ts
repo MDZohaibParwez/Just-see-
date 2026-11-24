@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { directDownloadUrl } from "../src/mcp";
 import http from "node:http";
 import fs from "node:fs";
 import os from "node:os";
@@ -85,8 +86,37 @@ describe("connector (MCP)", () => {
     const ok = await fetch(`${apiBase}/api/jobs/${job}/status`, { method: "POST", body: JSON.stringify({ key, status: "done", url: `${apiBase}/files/renders/${job}.mp4` }) });
     expect(ok.status).toBe(200);
     expect(textOf(await c.callTool({ name: "get_render", arguments: { job_id: job } }))).toContain(`Download: ${apiBase}/files/renders/${job}.mp4`);
+    // Source clips are deleted once the MP4 is saved.
+    expect(fs.existsSync(path.join(dir, "media", id))).toBe(false);
     await c.close();
   }, 60_000);
+
+  it("keeps clips when asked, and delete_video removes the project", async () => {
+    const c = await client();
+    const id = /Created video ([a-z0-9]+)/.exec(textOf(await c.callTool({ name: "create_video", arguments: {} })))![1]!;
+    const m = /Added video (m\w+)/.exec(textOf(await c.callTool({ name: "add_media", arguments: { video_id: id, url: `${fileBase}/clip1.mp4` } })))![1]!;
+    await c.callTool({ name: "add_clip", arguments: { video_id: id, media_id: m } });
+    const render = textOf(await c.callTool({ name: "render_video", arguments: { video_id: id, keep_media: true } }));
+    const job = /Render job ([a-z0-9]+)/.exec(render)![1]!;
+    const key = /key=([A-Za-z0-9_-]+)/.exec(render)![1]!;
+    await fetch(`${apiBase}/api/jobs/${job}/status`, { method: "POST", body: JSON.stringify({ key, status: "done", url: `${apiBase}/files/renders/${job}.mp4` }) });
+    expect(fs.readdirSync(path.join(dir, "media", id))).toHaveLength(1);
+    expect(textOf(await c.callTool({ name: "delete_video", arguments: { video_id: id } }))).toContain("1 clip");
+    expect(fs.existsSync(path.join(dir, "media", id))).toBe(false);
+    expect((await c.callTool({ name: "get_video", arguments: { video_id: id } }) as { isError?: boolean }).isError).toBe(true);
+    await c.close();
+  });
+
+  it("turns cloud drive share links into direct downloads", () => {
+    expect(directDownloadUrl("https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQ/view?usp=sharing")).toEqual({
+      url: "https://drive.usercontent.google.com/download?id=1AbCdEfGhIjKlMnOpQ&export=download&confirm=t",
+      source: "google-drive",
+    });
+    expect(directDownloadUrl("https://drive.google.com/open?id=1AbCdEfGhIjKlMnOpQ").source).toBe("google-drive");
+    expect(() => directDownloadUrl("https://drive.google.com/drive/folders")).toThrow(/file id/);
+    expect(directDownloadUrl("https://www.dropbox.com/s/abc/clip.mp4?dl=0").url).toBe("https://www.dropbox.com/s/abc/clip.mp4?raw=1");
+    expect(directDownloadUrl("https://example.com/a.mp4")).toEqual({ url: "https://example.com/a.mp4", source: "link" });
+  });
 
   it("lists reel styles, explains them and applies one", async () => {
     const c = await client();

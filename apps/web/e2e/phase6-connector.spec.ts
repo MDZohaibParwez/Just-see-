@@ -51,7 +51,8 @@ test("connector: 3 clips → captioned 30 s reel → download link", async ({ pa
   await claude.callTool({ name: "add_music", arguments: { video_id: id, mood: "upbeat", volume: 0.5 } });
   const fit = textOf(await claude.callTool({ name: "fit_duration", arguments: { video_id: id, seconds: 30 } }));
   expect(fit).toContain("30.0 s");
-  const render = textOf(await claude.callTool({ name: "render_video", arguments: { video_id: id, resolution: "720p" } }));
+  // keep_media: the project is reopened in the editor at the end (by default clips are deleted after the render).
+  const render = textOf(await claude.callTool({ name: "render_video", arguments: { video_id: id, resolution: "720p", keep_media: true } }));
   const link = /(http:\/\/localhost:4173\/render\/\?[^\s]+)/.exec(render)![1]!;
   const job = /Render job ([a-z0-9]+)/.exec(render)![1]!;
   expect(textOf(await claude.callTool({ name: "get_render", arguments: { job_id: job } }))).toContain("Waiting");

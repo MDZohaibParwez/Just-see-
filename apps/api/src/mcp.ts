@@ -61,11 +61,54 @@ function describe(r: Recipe): string {
 
 const MAX_BYTES = 300 * 1024 * 1024;
 
-async function fetchMedia(url: string): Promise<{ bytes: Uint8Array; type: string; name: string }> {
+/**
+ * Share links from cloud drives point at a web page, not the file. Turn them
+ * into direct download links. Google Drive: `confirm=t` skips the "can't scan
+ * for viruses" page that big files (over ~100 MB) show.
+ */
+export function directDownloadUrl(url: string): { url: string; source: "google-drive" | "dropbox" | "onedrive" | "link" } {
   const u = new URL(url);
-  if (!/^https?:$/.test(u.protocol)) throw new Error("Only http(s) links are supported");
+  const host = u.hostname.toLowerCase();
+  if (host === "drive.google.com" || host === "docs.google.com" || host === "drive.usercontent.google.com") {
+    const id = /\/file\/d\/([\w-]{10,})/.exec(u.pathname)?.[1] ?? u.searchParams.get("id");
+    if (!id || !/^[\w-]{10,200}$/.test(id)) throw new Error("This Google Drive link has no file id. Use the file's Share link.");
+    return { url: `https://drive.usercontent.google.com/download?id=${id}&export=download&confirm=t`, source: "google-drive" };
+  }
+  if (host === "www.dropbox.com" || host === "dropbox.com") {
+    u.searchParams.delete("dl");
+    u.searchParams.set("raw", "1");
+    return { url: u.toString(), source: "dropbox" };
+  }
+  if (host === "1drv.ms" || host.endsWith("onedrive.live.com") || host.endsWith("sharepoint.com")) {
+    if (!u.searchParams.has("download")) u.searchParams.set("download", "1");
+    return { url: u.toString(), source: "onedrive" };
+  }
+  return { url, source: "link" };
+}
+
+function nameFromHeaders(res: Response, fallback: string): string {
+  const cd = res.headers.get("content-disposition") ?? "";
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(cd)?.[1];
+  const plain = /filename="?([^";]+)"?/i.exec(cd)?.[1];
+  const raw = star ? decodeURIComponent(star) : plain;
+  return (raw ?? fallback).replace(/[\\/\r\n]/g, "_").slice(0, 300) || fallback;
+}
+
+export async function fetchMedia(url: string): Promise<{ bytes: Uint8Array; type: string; name: string }> {
+  const first = new URL(url);
+  if (!/^https?:$/.test(first.protocol)) throw new Error("Only http(s) links are supported");
+  const direct = directDownloadUrl(url);
+  const u = new URL(direct.url);
   const res = await fetch(u, { redirect: "follow" });
-  if (!res.ok || !res.body) throw new Error(`Could not download (${res.status})`);
+  if (!res.ok || !res.body) {
+    if (direct.source === "google-drive" && (res.status === 403 || res.status === 404)) throw new Error("Google Drive did not share the file. In Drive: Share → General access → \"Anyone with the link\", then try again.");
+    throw new Error(`Could not download (${res.status})`);
+  }
+  // A web page instead of the file: the link is private or needs a sign-in.
+  if (/text\/html/i.test(res.headers.get("content-type") ?? "")) {
+    await res.body.cancel().catch(() => undefined);
+    throw new Error(direct.source === "google-drive" ? "Google Drive asked for a sign-in. In Drive: Share → General access → \"Anyone with the link\", then try again." : "The link opens a web page, not a file. Use a direct download link.");
+  }
   const len = Number(res.headers.get("content-length") ?? 0);
   if (len > MAX_BYTES) throw new Error("File is larger than 300 MB");
   const chunks: Uint8Array[] = [];
@@ -84,7 +127,8 @@ async function fetchMedia(url: string): Promise<{ bytes: Uint8Array; type: strin
     bytes.set(c, o);
     o += c.length;
   }
-  return { bytes, type: res.headers.get("content-type") ?? "", name: decodeURIComponent(u.pathname.split("/").pop() || "media") };
+  const fallback = direct.source === "link" ? decodeURIComponent(u.pathname.split("/").pop() || "media") : "media";
+  return { bytes, type: res.headers.get("content-type") ?? "", name: nameFromHeaders(res, fallback) };
 }
 
 /** Add a downloaded or uploaded file to a recipe (shared by the MCP tool and the upload page). */
@@ -129,7 +173,7 @@ export function buildMcpServer(ctx: Ctx): McpServer {
     { name: "just-see", version: "0.6.0" },
     {
       instructions:
-        "Just See edits videos. For popular Reels formats (anime dialogue, POV story with notification, aesthetic detail, hook + lyric montage, quote reveal, talking head + captions + CTA, scenic lyric montage, dream card, minimal lyric card) call list_styles / get_style_guide and apply_style after adding clips. Typical flow: create_video → add_media (public links) or give the user get_upload_link to add phone clips → list_media to see lengths → add_clip for each clip in order (with trims) → add_captions / add_text / add_music / add_sound_effect / add_motion_template → fit_duration if needed → render_video. Give the user the render link: opening it renders the video in their browser and saves it; then get_render returns the MP4 download link. Use list_options to see sound effects, moods, transitions, effects and templates.",
+        "Just See edits videos. Clips can come from Google Drive: ask the user for the file's Share link (General access: Anyone with the link) and pass it to add_media; files up to 300 MB work. Source clips are deleted from Just See's storage after the render is saved. For popular Reels formats (anime dialogue, POV story with notification, aesthetic detail, hook + lyric montage, quote reveal, talking head + captions + CTA, scenic lyric montage, dream card, minimal lyric card) call list_styles / get_style_guide and apply_style after adding clips. Typical flow: create_video → add_media (public links) or give the user get_upload_link to add phone clips → list_media to see lengths → add_clip for each clip in order (with trims) → add_captions / add_text / add_music / add_sound_effect / add_motion_template → fit_duration if needed → render_video. Give the user the render link: opening it renders the video in their browser and saves it; then get_render returns the MP4 download link. Use list_options to see sound effects, moods, transitions, effects and templates.",
     },
   );
 
@@ -152,7 +196,7 @@ export function buildMcpServer(ctx: Ctx): McpServer {
     "add_media",
     {
       title: "Add media from a link",
-      description: "Download a video, image or audio file from a public http(s) link into the project. Returns a media id and its length.",
+      description: "Add a video, image or audio file to the project from a link: Google Drive share links (\"Anyone with the link\"), Dropbox, OneDrive or any direct http(s) link. Up to 300 MB. Returns a media id and its length.",
       inputSchema: { video_id: z.string(), url: z.string().url(), name: z.string().max(300).optional(), kind: z.enum(["video", "image", "audio"]).optional() },
     },
     async ({ video_id, url, name, kind }) =>
@@ -329,16 +373,37 @@ export function buildMcpServer(ctx: Ctx): McpServer {
     {
       title: "Render the video",
       description: "Create a render job. Returns a link: opening it on any phone or computer builds and renders the MP4 in that browser and uploads it. Then call get_render for the download link.",
-      inputSchema: { video_id: z.string(), resolution: z.enum(["720p", "1080p"]).default("1080p") },
+      inputSchema: {
+        video_id: z.string(),
+        resolution: z.enum(["720p", "1080p"]).default("1080p"),
+        keep_media: z.boolean().default(false).describe("Keep the source clips online after the MP4 is saved (default: delete them to save space)"),
+      },
     },
-    async ({ video_id, resolution }) => {
+    async ({ video_id, resolution, keep_media }) => {
       const r = await loadRecipe(ctx.store, video_id);
       if (!r) return fail("Unknown video id");
       if (!r.ops.some((o) => o.op === "clip")) return fail("Add at least one clip first.");
-      const job: RenderJob = { id: newId(), recipeId: r.id, status: "waiting", token: randomBytes(18).toString("base64url"), resolution, outputUrl: null, error: null, createdAt: Date.now(), updatedAt: Date.now() };
+      const job: RenderJob = { id: newId(), recipeId: r.id, status: "waiting", token: randomBytes(18).toString("base64url"), resolution, outputUrl: null, error: null, deleteMedia: !keep_media, createdAt: Date.now(), updatedAt: Date.now() };
       await ctx.store.putJson(`jobs/${job.id}.json`, job);
       const link = `${ctx.webBase}/render/?job=${job.id}&key=${job.token}&api=${encodeURIComponent(ctx.apiBase)}`;
-      return text(`Render job ${job.id} created.\nOpen this link to render (keep the page open until it finishes):\n${link}\nThen call get_render with job_id ${job.id} to get the MP4 download link.`);
+      return text(`Render job ${job.id} created.\nOpen this link to render (keep the page open until it finishes):\n${link}\nThen call get_render with job_id ${job.id} to get the MP4 download link.${keep_media ? "" : "\nAfter the MP4 is saved, the source clips are deleted from Just See's online storage (the user's own Drive files are not touched)."}`);
+    },
+  );
+
+  server.registerTool(
+    "delete_video",
+    {
+      title: "Delete a project",
+      description: "Delete a project's clips and plan from Just See's online storage now. Rendered MP4s are kept until they expire (30 days). Does not touch the user's Google Drive.",
+      inputSchema: { video_id: z.string() },
+    },
+    async ({ video_id }) => {
+      if (!/^[a-z0-9]{4,40}$/.test(video_id)) return fail("Bad video id");
+      const r = await loadRecipe(ctx.store, video_id);
+      if (!r) return fail("Unknown video id");
+      const n = await ctx.store.deletePrefix(`media/${video_id}/`);
+      await ctx.store.deletePrefix(`recipes/${video_id}.json`);
+      return text(`Deleted project ${video_id} (${n} clip${n === 1 ? "" : "s"}).`);
     },
   );
 
@@ -346,7 +411,7 @@ export function buildMcpServer(ctx: Ctx): McpServer {
     if (!/^[a-z0-9]{4,40}$/.test(job_id)) return fail("Bad job id");
     const job = await ctx.store.getJson<RenderJob>(`jobs/${job_id}.json`);
     if (!job) return fail("Unknown job id");
-    if (job.status === "done" && job.outputUrl) return text(`Done. Download: ${job.outputUrl}`);
+    if (job.status === "done" && job.outputUrl) return text(`Done. Download: ${job.outputUrl}${job.deleteMedia ? "\nThe source clips were deleted from Just See's storage, so this project can no longer be reopened in the editor. The MP4 link works for 30 days." : ""}`);
     if (job.status === "failed") return fail(`Render failed: ${job.error ?? "unknown error"}`);
     return text(job.status === "rendering" ? "Rendering now in the browser…" : "Waiting: the render link has not been opened yet.");
   });

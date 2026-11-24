@@ -170,6 +170,8 @@ export async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx
         if (b.url && !isOurUrl(ctx, b.url)) return send(res, 400, { error: "Bad output url" });
         const next = RenderJobSchema.parse({ ...job, status: b.status ?? job.status, outputUrl: b.url ?? job.outputUrl, error: b.error ?? null, updatedAt: Date.now() });
         await ctx.store.putJson(`jobs/${id}.json`, next);
+        // The MP4 is saved: the source clips are no longer needed online.
+        if (next.status === "done" && job.status !== "done" && next.deleteMedia) await ctx.store.deletePrefix(`media/${job.recipeId}/`).catch(() => 0);
         return send(res, 200, { ok: true });
       }
     }

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.1 — Connector: Google Drive clips, auto-delete after render
+
+### Added
+
+- `add_media` takes **Google Drive** share links ("Anyone with the link"), also Dropbox and OneDrive. Big Drive files (100 MB+) work; up to 300 MB per file.
+- Source clips are **deleted from Just See's online storage once the MP4 is saved** (`render_video` `keep_media: true` keeps them). Files in the user's own Drive are never touched.
+- `delete_video` tool: remove a project's clips and plan right away.
+
 ## 0.7.0 — Phase 7: polish (speed, accessibility, onboarding, crash reports)
 
 ### Added

@@ -100,6 +100,8 @@ export const RenderJobSchema = z.object({
   resolution: z.enum(["720p", "1080p"]).default("1080p"),
   outputUrl: z.string().max(4000).nullable().default(null),
   error: z.string().max(2000).nullable().default(null),
+  /** Delete the project's source clips from online storage once the MP4 is saved. */
+  deleteMedia: z.boolean().default(true),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
 });

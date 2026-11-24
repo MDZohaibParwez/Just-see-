@@ -13,6 +13,8 @@ export interface Store {
   putBytes(pathname: string, body: Uint8Array | ReadableStream<Uint8Array>, contentType: string): Promise<string>;
   /** Public URL of a stored file. */
   urlOf(pathname: string): string;
+  /** Delete every file under a folder (e.g. "media/abc/"). Returns how many were deleted. */
+  deletePrefix(prefix: string): Promise<number>;
   /** Delete files older than maxAgeMs (except meta/). Returns how many were deleted. */
   cleanup(maxAgeMs: number, now?: number): Promise<number>;
 }
@@ -84,6 +86,28 @@ export class FsStore implements Store {
     }
     return this.urlOf(p);
   }
+  async deletePrefix(prefix: string): Promise<number> {
+    const dir = this.file(prefix.replace(/\/+$/, ""));
+    let n = 0;
+    try {
+      if ((await fs.stat(dir)).isFile()) {
+        await fs.rm(dir, { force: true });
+        return 1;
+      }
+      const walk = async (d: string): Promise<void> => {
+        for (const e of await fs.readdir(d, { withFileTypes: true })) {
+          const f = path.join(d, e.name);
+          if (e.isDirectory()) await walk(f);
+          else n++;
+        }
+      };
+      await walk(dir);
+      await fs.rm(dir, { recursive: true, force: true });
+    } catch {
+      return 0;
+    }
+    return n;
+  }
   async cleanup(maxAgeMs: number, now = Date.now()): Promise<number> {
     let n = 0;
     const walk = async (dir: string): Promise<void> => {
@@ -140,6 +164,20 @@ export class BlobStore implements Store {
     const { put } = await import("@vercel/blob");
     const r = await put(assertSafePath(p), body instanceof Uint8Array ? Buffer.from(body) : body, { access: "public", addRandomSuffix: false, allowOverwrite: true, contentType, token: this.token, multipart: true });
     return r.url;
+  }
+  async deletePrefix(prefix: string): Promise<number> {
+    const { list, del } = await import("@vercel/blob");
+    let cursor: string | undefined;
+    let n = 0;
+    do {
+      const page = await list({ token: this.token, prefix: assertSafePath(prefix), cursor, limit: 1000 });
+      if (page.blobs.length) {
+        await del(page.blobs.map((b) => b.url), { token: this.token });
+        n += page.blobs.length;
+      }
+      cursor = page.hasMore ? page.cursor : undefined;
+    } while (cursor);
+    return n;
   }
   async cleanup(maxAgeMs: number, now = Date.now()): Promise<number> {
     const { list, del } = await import("@vercel/blob");
