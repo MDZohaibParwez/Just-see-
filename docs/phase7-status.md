@@ -16,6 +16,11 @@ Measured by `apps/web/e2e/phase7-perf.spec.ts` (Pixel 7 emulation). The test mac
 | WCAG AA contrast · screen-reader labels on every control | ✅ `phase7-a11y.spec.ts`: home, editor, 9 panels, text, Library, Studio, Motion, Device check, in dark and light |
 | First edit finished in under 60 s | ✅ `phase7-onboarding.spec.ts`: Quick reel with 3 clips is ready to export in **≈ 6 s**; the 30 s MP4 then saves and checks out with ffprobe (encode time depends on the phone's encoder) |
 
+## Full test run
+
+- Unit tests: schema 48, engine 92, web 3, API 6, all passing.
+- E2E: 54 tests; 53 passed on the first full run, and the live-editing test failed after the lazy-loading change (panel opened before it had loaded). Fixed, and it passes again.
+
 ## Features
 
 | Feature | Status | Notes |

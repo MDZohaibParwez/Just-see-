@@ -6,9 +6,9 @@ import { useT } from "@/lib/i18n";
 import { startHosting, stopLive, useLive } from "@/lib/live";
 
 /** "Edit together": start a live session, share the invite, see who is in. */
-export function LivePanel() {
+export function LivePanel({ startOpen = false }: { startOpen?: boolean }) {
   const t = useT();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(startOpen);
   const [link, setLink] = useState("");
   const live = useLive();
   useEffect(() => {

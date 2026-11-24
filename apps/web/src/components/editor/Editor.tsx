@@ -46,22 +46,22 @@ function PanelLoading() {
 
 /** Loads the live-editing code (PeerJS) only once someone starts or joins a session. */
 function LiveGate() {
-  const [on, setOn] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).has("live"));
+  // Joined from an invite link: show the live badge, panel closed.
+  const [state, setState] = useState<"off" | "joined" | "opened">(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).has("live") ? "joined" : "off",
+  );
   useEffect(() => {
-    if (on) return;
-    const go = () => {
-      setOn(true);
-      // The panel was not listening yet: ask it again once it has loaded.
-      setTimeout(() => window.dispatchEvent(new Event("justsee:live")), 50);
-    };
+    if (state !== "off") return;
+    // First "Edit together" tap: load the panel already open (it was not listening yet).
+    const go = () => setState("opened");
     window.addEventListener("justsee:live", go, { once: true });
     return () => window.removeEventListener("justsee:live", go);
-  }, [on]);
-  return on ? (
+  }, [state]);
+  return state === "off" ? null : (
     <Suspense fallback={null}>
-      <LivePanel />
+      <LivePanel startOpen={state === "opened"} />
     </Suspense>
-  ) : null;
+  );
 }
 
 const TIPS = ["tip1", "tip2", "tip3"] as const;
