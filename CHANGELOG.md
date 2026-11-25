@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.4 — Cloud usage in connector replies
+
+### Added
+
+- Each `add_media` reply says how much was downloaded and stored and how long the server worked.
+- When a render is done, `get_render` adds a **Cloud use** block: this video's download, storage, data sent to the browser and server time; this month's data transfer against the free plan; storage in use now.
+- `get_usage` tool for the month (or one video). Claude's own credits are not visible to a connector (see Claude → Settings → Usage).
+- Listed in `docs/before-going-public.md` (to be reworked later).
+
 ## 0.7.3 — Personal mode: delete clips as early as possible
 
 ### Changed

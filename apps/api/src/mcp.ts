@@ -15,6 +15,7 @@ import { EFFECTS } from "../../../packages/engine/src/effects/catalog";
 import { REEL_STYLES, REEL_STYLE_BY_ID, styleGuide } from "../../../packages/engine/src/styles/reel-styles";
 import { probe, probeStored, sniffKind } from "./probe";
 import { MEDIA_KEEP_MS, STORAGE_LIMIT, type Store } from "./store";
+import { fmtBytes, monthUsage, recordUsage, usageReport, videoUsage } from "./usage";
 
 export interface Ctx {
   store: Store;
@@ -165,8 +166,9 @@ export async function addStoredMedia(ctx: Ctx, r: Recipe, pathname: string, cont
   const kind = (kindHint as "video" | "image" | "audio" | undefined) ?? sniffKind(head, contentType, name);
   if (!kind) throw new Error("Unknown file type: use a video, image or audio file");
   let durationSec: number | null = kind === "image" ? 0 : null;
+  const size = await ctx.store.sizeOf(pathname);
+  await recordUsage(ctx.store, r.id, { stored: size, mediaBytes: size, calls: 1 });
   if (kind !== "image") {
-    const size = await ctx.store.sizeOf(pathname);
     const p = await probeStored((a, b) => ctx.store.readRange(pathname, a, b), size, head, contentType, name).catch(() => null);
     durationSec = p?.durationSec ?? null;
   }
@@ -225,6 +227,7 @@ export async function addMediaFromUrl(ctx: Ctx, r: Recipe, url: string, name?: s
   const p = await probeStored((a, b) => ctx.store.readRange(pathname, a, b), total, head, d.type, fileName).catch(() => null);
   const m = { id, url: stored, kind, name: fileName, durationSec: p?.durationSec ?? null, license: null };
   r.media.push(m);
+  await recordUsage(ctx.store, r.id, { stored: total, mediaBytes: total, calls: 1 });
   return m;
 }
 
@@ -238,6 +241,7 @@ export async function addMediaBytes(ctx: Ctx, r: Recipe, bytes: Uint8Array, cont
   const url = await ctx.store.putBytes(`media/${r.id}/${id}.${ext}`, bytes, contentType || (kind === "video" ? "video/mp4" : kind === "image" ? `image/${ext === "jpg" ? "jpeg" : ext}` : "audio/mpeg"));
   const m = { id, url, kind, name: name.slice(0, 300), durationSec: p.durationSec, license: null };
   r.media.push(m);
+  await recordUsage(ctx.store, r.id, { stored: bytes.length, mediaBytes: bytes.length, calls: 1 });
   return m;
 }
 
@@ -270,7 +274,7 @@ export function buildMcpServer(ctx: Ctx): McpServer {
     { name: "just-see", version: "0.6.0" },
     {
       instructions:
-        "Just See edits videos. Clips can come from Google Drive: ask the user for the file's Share link (General access: Anyone with the link) and pass it to add_media; files up to 900 MB work. Source clips are deleted from Just See's storage after the render is saved. For popular Reels formats (anime dialogue, POV story with notification, aesthetic detail, hook + lyric montage, quote reveal, talking head + captions + CTA, scenic lyric montage, dream card, minimal lyric card) call list_styles / get_style_guide and apply_style after adding clips. Typical flow: create_video → add_media (public links) or give the user get_upload_link to add phone clips → list_media to see lengths → add_clip for each clip in order (with trims) → add_captions / add_text / add_music / add_sound_effect / add_motion_template → fit_duration if needed → render_video. Give the user the render link: opening it renders the video in their browser and saves it; then get_render returns the MP4 download link. Use list_options to see sound effects, moods, transitions, effects and templates.",
+        "Just See edits videos. Clips can come from Google Drive: ask the user for the file's Share link (General access: Anyone with the link) and pass it to add_media; files up to 900 MB work. Source clips are deleted from Just See's storage after the render is saved. For popular Reels formats (anime dialogue, POV story with notification, aesthetic detail, hook + lyric montage, quote reveal, talking head + captions + CTA, scenic lyric montage, dream card, minimal lyric card) call list_styles / get_style_guide and apply_style after adding clips. Typical flow: create_video → add_media (public links) or give the user get_upload_link to add phone clips → list_media to see lengths → add_clip for each clip in order (with trims) → add_captions / add_text / add_music / add_sound_effect / add_motion_template → fit_duration if needed → render_video. Give the user the render link: opening it renders the video in their browser and saves it; then get_render returns the MP4 download link. After get_render, show the user the Cloud use lines it returns; get_usage shows this month's use. Use list_options to see sound effects, moods, transitions, effects and templates.",
     },
   );
 
@@ -298,8 +302,12 @@ export function buildMcpServer(ctx: Ctx): McpServer {
     },
     async ({ video_id, url, name, kind }) =>
       withRecipe(ctx, video_id, async (r) => {
+        const t0 = Date.now();
+        const before = (await videoUsage(ctx.store, r.id)).mediaBytes;
         const m = await addMediaFromUrl(ctx, r, url, name, kind);
-        return `Added ${m.kind} ${m.id} "${m.name}"${m.durationSec != null ? ` (${m.durationSec.toFixed(1)} s)` : ""}.`;
+        const size = (await videoUsage(ctx.store, r.id)).mediaBytes - before;
+        await recordUsage(ctx.store, r.id, { downloaded: size, serverMs: Date.now() - t0 });
+        return `Added ${m.kind} ${m.id} "${m.name}"${m.durationSec != null ? ` (${m.durationSec.toFixed(1)} s)` : ""}. Cloud: ${fmtBytes(size)} downloaded and stored, ${((Date.now() - t0) / 1000).toFixed(1)} s server time.`;
       }),
   );
 
@@ -503,11 +511,25 @@ export function buildMcpServer(ctx: Ctx): McpServer {
     },
   );
 
+  server.registerTool(
+    "get_usage",
+    { title: "Cloud usage", description: "How much of Just See's free cloud plan was used this month (and by one video if video_id is given). Claude's own credits are not visible here.", inputSchema: { video_id: z.string().optional() } },
+    async ({ video_id }) => {
+      const used = ctx.store.mode === "blob" ? await ctx.store.usage().catch(() => null) : null;
+      const video = video_id && /^[a-z0-9]{4,40}$/.test(video_id) ? await videoUsage(ctx.store, video_id) : null;
+      return text(usageReport(video, await monthUsage(ctx.store), used));
+    },
+  );
+
   server.registerTool("get_render", { title: "Render status", description: "Status of a render job and the MP4 download link when done.", inputSchema: { job_id: z.string() } }, async ({ job_id }) => {
     if (!/^[a-z0-9]{4,40}$/.test(job_id)) return fail("Bad job id");
     const job = await ctx.store.getJson<RenderJob>(`jobs/${job_id}.json`);
     if (!job) return fail("Unknown job id");
-    if (job.status === "done" && job.outputUrl) return text(`Done. Download: ${job.outputUrl}${job.deleteMedia ? "\nThe source clips were deleted from Just See's storage, so this project can no longer be reopened in the editor. The MP4 link works for 30 days." : ""}`);
+    if (job.status === "done" && job.outputUrl) {
+      const used = await ctx.store.usage().catch(() => null);
+      const report = usageReport(await videoUsage(ctx.store, job.recipeId), await monthUsage(ctx.store), ctx.store.mode === "blob" ? used : null);
+      return text(`Done. Download: ${job.outputUrl}${job.deleteMedia ? "\nThe source clips were deleted from Just See's storage, so this project can no longer be reopened in the editor. The MP4 link works for 30 days." : ""}\n\n${report}`);
+    }
     if (job.status === "failed") return fail(`Render failed: ${job.error ?? "unknown error"}`);
     return text(job.status === "rendering" ? "Rendering now in the browser…" : "Waiting: the render link has not been opened yet.");
   });

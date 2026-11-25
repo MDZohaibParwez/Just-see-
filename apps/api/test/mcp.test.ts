@@ -66,6 +66,7 @@ describe("connector (MCP)", () => {
     for (const f of ["clip1.mp4", "clip2.mp4", "clip3.mp4"]) {
       const out = textOf(await c.callTool({ name: "add_media", arguments: { video_id: id, url: `${fileBase}/${f}` } }));
       expect(out).toMatch(/Added video m\w+ .*\(\d+(\.\d+)? s\)/);
+      expect(out).toMatch(/Cloud: [\d.]+ (KB|MB) downloaded and stored/);
       ids.push(/Added video (m\w+)/.exec(out)![1]!);
     }
     for (const m of ids) await c.callTool({ name: "add_clip", arguments: { video_id: id, media_id: m, transition: "fade" } });
@@ -93,6 +94,12 @@ describe("connector (MCP)", () => {
     const ok = await fetch(`${apiBase}/api/jobs/${job}/status`, { method: "POST", body: JSON.stringify({ key, status: "done", url: `${apiBase}/files/renders/${job}.mp4` }) });
     expect(ok.status).toBe(200);
     expect(textOf(await c.callTool({ name: "get_render", arguments: { job_id: job } }))).toContain(`Download: ${apiBase}/files/renders/${job}.mp4`);
+    // The reply tells how much cloud the video used.
+    const done = textOf(await c.callTool({ name: "get_render", arguments: { job_id: job } }));
+    expect(done).toContain("Cloud use");
+    expect(done).toMatch(/This video: downloaded [\d.]+ MB, stored [\d.]+ MB, sent to browser [\d.]+ MB/);
+    expect(done).toContain("Claude → Settings → Usage");
+    expect(textOf(await c.callTool({ name: "get_usage", arguments: { video_id: id } }))).toMatch(/This month: data transfer/);
     // Source clips are deleted once the MP4 is saved.
     expect(fs.existsSync(path.join(dir, "media", id))).toBe(false);
     await c.close();

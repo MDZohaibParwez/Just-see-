@@ -7,6 +7,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { RenderJobSchema, type RenderJob } from "@just-see/schema";
 import { MAX_BYTES, addStoredMedia, buildMcpServer, links, loadRecipe, newId, saveRecipe, type Ctx } from "./mcp";
 import { FsStore, assertSafePath, maybeCleanup } from "./store";
+import { recordUsage, videoUsage } from "./usage";
 
 const MAX_JSON = 1024 * 1024;
 
@@ -188,6 +189,8 @@ export async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx
       if (req.method === "POST" && sub === "loaded") {
         const b = await readJson<{ key?: string }>(req);
         if (b.key !== job.token) return send(res, 403, { error: "Wrong key" });
+        // The render page has just downloaded every clip from storage.
+        await recordUsage(ctx.store, job.recipeId, { served: (await videoUsage(ctx.store, job.recipeId)).mediaBytes, calls: 1 });
         const deleted = job.deleteMedia && eagerDelete() ? await deleteJobMedia(ctx, job) : 0;
         return send(res, 200, { ok: true, deleted });
       }
@@ -198,7 +201,12 @@ export async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx
         const next = RenderJobSchema.parse({ ...job, status: b.status ?? job.status, outputUrl: b.url ?? job.outputUrl, error: b.error ?? null, updatedAt: Date.now() });
         await ctx.store.putJson(`jobs/${id}.json`, next);
         // The MP4 is saved: the source clips are no longer needed online.
-        if (next.status === "done" && job.status !== "done" && next.deleteMedia) await deleteJobMedia(ctx, job);
+        if (next.status === "done" && job.status !== "done") {
+          // The MP4: stored once, and counted as downloaded once by the user.
+          const out = next.outputUrl && isOurUrl(ctx, next.outputUrl) ? await ctx.store.sizeOf(decodeURIComponent(new URL(next.outputUrl).pathname.replace(/^\/(files\/)?/, ""))).catch(() => 0) : 0;
+          await recordUsage(ctx.store, job.recipeId, { stored: out, served: out, calls: 1 });
+          if (next.deleteMedia) await deleteJobMedia(ctx, job);
+        }
         return send(res, 200, { ok: true });
       }
     }
