@@ -9,7 +9,7 @@ Just See is an all-in-one creative studio that runs in the browser. Creators can
 - 🤖 **Works with Claude.** A built-in Claude connector (remote MCP server) lets Claude create and edit projects end to end.
 - 🌏 **Made for Indian creators.** Captions in Hindi, English, Hinglish and Urdu; correct Devanagari, Nastaliq and Gujarati text; Hindi and English UI from day one.
 
-> **Status:** 🚧 Planning. Nothing is built yet. Phase 1 (foundation + video editor MVP) is next. See [Roadmap](#roadmap).
+> **Status:** ✅ Phase 1 and ✅ Phase 2 (full video editor) are built: 170+ effects, 86 transitions, keyframes, LUTs, chroma key, AI background removal, auto captions (Hindi/English/Hinglish/Urdu), beat sync, auto reframe, 4K export. A few items need the GPU server (Phase 6) — see [docs/phase2-status.md](docs/phase2-status.md). Phase 3 (audio studio) is next.
 
 ---
 
@@ -173,18 +173,18 @@ Full details will live in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Repository layout
 
-Planned monorepo structure:
+Monorepo structure (`mcp-server`, `render-worker` and `dsp` arrive in later phases):
 
 ```
 just-see/
 ├── apps/
-│   ├── web/             # Next.js editor + PWA
-│   ├── mcp-server/      # Claude connector (remote MCP)
-│   └── render-worker/   # GPU server render
+│   ├── web/             # Next.js editor + PWA (static export)
+│   ├── mcp-server/      # Claude connector (remote MCP) — Phase 6
+│   └── render-worker/   # GPU server render — Phase 6
 ├── packages/
 │   ├── engine/          # renderFrame / renderAudio, shared everywhere
 │   ├── schema/          # project document + Zod schemas + commands
-│   ├── dsp/             # Rust → WASM audio DSP
+│   ├── dsp/             # Rust → WASM audio DSP — Phase 3
 │   └── ui/              # shared components and icon set
 ├── docs/
 │   └── asset-sources.md # provider API terms and licenses
@@ -198,38 +198,42 @@ just-see/
 
 ## Getting started
 
-> The code doesn't exist yet. These commands are the target setup once Phase 1 lands.
-
-**Requirements:** Node.js 20+, pnpm 9+, Rust (stable) with `wasm-pack`, and a browser with WebCodecs (recent Chrome, Edge or Android Chrome).
+**Requirements:** Node.js 20+, pnpm 10+, and a browser with WebCodecs and WebGL2 (recent Chrome, Edge, Samsung Internet, or Android Chrome). `ffmpeg` is only needed to generate E2E test media.
 
 ```bash
 git clone https://github.com/MDZohaibParwez/Just-see-.git
 cd Just-see-
 pnpm install
-pnpm dev          # start the web app at http://localhost:3000
-pnpm test         # unit tests
-pnpm test:e2e     # Playwright end-to-end tests
+pnpm dev          # web app at http://localhost:3000
+pnpm test         # unit tests (schema + engine)
+pnpm typecheck    # strict TypeScript everywhere
+pnpm build        # static export to apps/web/out
+pnpm test:e2e     # Playwright (builds needed first: pnpm build)
 ```
 
-**To test on your phone:** run `pnpm dev --hostname 0.0.0.0`, then open `http://<your-computer-ip>:3000` on a phone on the same Wi-Fi. Each phase also gets a Vercel preview link.
+**Try it on your phone:** run `pnpm dev --hostname 0.0.0.0`, then open `http://<your-computer-ip>:3000` on a phone on the same Wi-Fi. Phone browsers only allow WebCodecs on `https://` or `localhost`, so for a real phone test use the deployed preview link (or a tunnel).
 
----
+**Check a device:** open `/diagnostics` to see WebGL2, WebCodecs, the chosen encoders and whether every shader compiles.
+
+**Keyboard (desktop):** Space play/pause · S split · Delete delete · Ctrl+Z / Ctrl+Shift+Z undo/redo · Ctrl+D duplicate · ← → step a frame · + / − zoom · T add text · M marker · I import · Ctrl+E export · Shift+click multi-select.
 
 ## Roadmap
+
+> ⚠️ Set up for personal use right now (clips deleted early, free 1 GB storage). See [Before going public](docs/before-going-public.md).
 
 Phases are built strictly in order. A phase is done only when its check passes.
 
 | # | Phase | Done when | Status |
 | --- | --- | --- | --- |
-| 1 | **Foundation + video MVP**: monorepo, schema, commands, engine, import, timeline (cut, trim, split, speed), text, 20 transitions, 30 effects, MP4 export, autosave, PWA | A 60 s 9:16 reel with 5 clips, text and music exports correctly from a phone browser | ⏳ Next |
-| 2 | **Full video editor**: all of Module 1, incl. auto captions, background removal, beat sync | Every video feature passes E2E tests and a 4K export matches the preview frame-for-frame | ⬜ |
-| 3 | **Audio studio**: Edit mode, then Produce mode | A noisy phone voice recording becomes a clean -14 LUFS export in one tap, and a 16-bar beat can be built | ⬜ |
-| 4 | **Motion studio**: layers, keyframes, graph editor, shapes, text animators, effects, Lottie | An animated lower-third and a logo reveal can be built and dropped into a video | ⬜ |
-| 5 | **Assets, templates, accounts, cloud sync** | One search covers fonts, music and SFX, and every asset carries license data | ⬜ |
-| 6 | **Claude connector + server render** | Claude, using only the connector, turns 3 clips into a captioned 30 s reel and returns a download link | ⬜ |
-| 7 | **Polish**: performance, accessibility, onboarding, analytics, crash reporting | All performance budgets met | ⬜ |
+| 1 | **Foundation + video MVP**: monorepo, schema, commands, engine, import, timeline (cut, trim, split, speed), text, 20 transitions, 30 effects, MP4 export, autosave, PWA | A 60 s 9:16 reel with 5 clips, text and music exports correctly from a phone browser | ✅ Done |
+| 2 | **Full video editor**: all of Module 1, incl. auto captions, background removal, beat sync | Every video feature passes E2E tests and a 4K export matches the preview frame-for-frame | ✅ Done ([status](docs/phase2-status.md)) |
+| 3 | **Audio studio**: Edit mode, then Produce mode | A noisy phone voice recording becomes a clean -14 LUFS export in one tap, and a 16-bar beat can be built | ✅ Done ([status](docs/phase3-status.md)) |
+| 4 | **Motion studio**: layers, keyframes, graph editor, shapes, text animators, effects, Lottie | An animated lower-third and a logo reveal can be built and dropped into a video | ✅ Done ([status](docs/phase4-status.md)) |
+| 5 | **Assets, templates, accounts, cloud sync** | One search covers fonts, music and SFX, and every asset carries license data | ✅ Done, without a server ([status](docs/phase5-status.md)) |
+| 6 | **Claude connector + server render** | Claude, using only the connector, turns 3 clips into a captioned 30 s reel and returns a download link | ✅ Done, rendered in the browser instead of a paid server ([status](docs/phase6-status.md)) |
+| 7 | **Polish**: performance, accessibility, onboarding, analytics, crash reporting | All performance budgets met | ✅ Done; the GPU preview goal is checked on a real phone with the Speed test ([status](docs/phase7-status.md)) |
 
-> 💰 Phases 2 and 6 need a paid GPU server (captions, background removal, stems, server render). Budget gets decided before those phases start.
+> 💰 Phases 2 and 3 were built to run free in the browser (captions, background removal and stems run on the device). Only Phase 6 (server render) may need a paid server; budget gets decided before it starts.
 
 ---
 
@@ -264,9 +268,10 @@ These rules apply to every contribution:
 | File | What's in it |
 | --- | --- |
 | [README.md](README.md) | This overview |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Project model, command system, engine, pipelines *(coming in Phase 1)* |
-| [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) | Every dependency and its license *(coming in Phase 1)* |
-| [CHANGELOG.md](CHANGELOG.md) | What changed in each release *(coming in Phase 1)* |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Project model, command system, engine, pipelines |
+| [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) | Every dependency and its license |
+| [CHANGELOG.md](CHANGELOG.md) | What changed in each release |
+| [docs/phase2-status.md](docs/phase2-status.md) | Module 1 feature-by-feature status |
 | [docs/asset-sources.md](docs/asset-sources.md) | Asset provider terms *(coming in Phase 5)* |
 
 ---
