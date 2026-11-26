@@ -49,6 +49,8 @@ Two ways to edit: the **app** (phone/laptop browser) and the **connector** (Clau
 | `add_media` | User gives a link (Google Drive share link "Anyone with the link", Dropbox, OneDrive, direct) | Big files answer at once and download in the background → call `list_media` after ~1 min. Up to 900 MB |
 | `get_upload_link` | Clips are on the user's phone | Then `list_media` |
 | `list_media` | See ids and lengths; check downloads | Shows "(downloading…)" / "(failed)" lines |
+| `get_transcript` | Know what is said (pick best lines, cut silences, place B-roll/captions on words) | Ready a few minutes after `add_media` (cloud worker). Hindi/English/Hinglish/Urdu |
+| `get_frames` | Know what is on screen (people, place, text, shot type) before choosing clips and styles | Up to 12 frames with times |
 | `add_clip` | Put clips in order, with trims | Plan the story first (anchor shots) |
 | `add_text` | Hook, titles, CTA | style + position |
 | `add_captions` | Talking videos | auto mode; style bold for reels |
@@ -61,7 +63,7 @@ Two ways to edit: the **app** (phone/laptop browser) and the **connector** (Clau
 | `list_styles` / `get_style_guide` / `apply_style` | User wants a known reel format | See `reel-editor` skill |
 | `fit_duration` | Exact length (15/30/60 s) | Trims clips evenly |
 | `remove_step` / `get_video` | Review and fix the plan | |
-| `render_video` | Finish | Give the user the render link; personal mode deletes source clips once the render page has them |
+| `render_video` | Finish | The cloud worker renders it within ~5–10 minutes even if every device is off; the user can also open the link to render at once. Personal mode deletes source clips once the render page has them |
 | `get_render` | After the link was opened | Shows the MP4 link and **Cloud use** — always show those lines |
 | `get_usage` | "Kitna cloud laga?" | Our own count; Claude's credits are in Claude → Settings → Usage |
 | `delete_video` | Clean up | Never touches the user's Drive |
@@ -80,4 +82,4 @@ Resolve / CapCut / Premiere names → Just See:
 
 ## 5. Not built yet (say so plainly, offer the workaround)
 
-Track any object (only faces now) · AI music fit to length · qualifier (change one colour) · adjustment clip · scopes · multicam sync · Claude hearing/seeing clips · rendering while every device is off. Order and status: `docs/reference-tools.md`.
+Track any object (only faces now) · AI music fit to length · qualifier (change one colour) · adjustment clip · scopes · multicam sync. Order and status: `docs/reference-tools.md`.

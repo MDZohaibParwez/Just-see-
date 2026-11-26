@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0 — Cloud worker: Claude hears and sees clips; renders with devices off
+
+### Added
+
+- **Cloud worker** on GitHub Actions (free for this public repo, `.github/workflows/cloud-worker.yml`, `worker/`): every 5 minutes it checks the API; if work is waiting it renders videos in headless Chromium and listens to / looks at new clips. Videos now finish while the owner's phone and laptop are off.
+- **Claude can hear**: `get_transcript` returns what is said in a clip with times (faster-whisper "small", Hindi/English/Hinglish/Urdu; first 20 minutes of long clips).
+- **Claude can see**: `get_frames` returns up to 12 still frames as images with times.
+- Clips are queued for listening automatically when added; idle worker runs stop after one quick check; logs print nothing about the videos (the repo is public).
+
 ## 0.8.0 — Face tracking (CapCut-style)
 
 ### Added

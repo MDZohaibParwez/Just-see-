@@ -105,13 +105,13 @@ Source: a 5 h 11 min DaVinci Resolve 20 beginner course the owner shared (Media,
 | Tool | Just See |
 | --- | --- |
 | Face tracking like CapCut: follow + zoom, blur, mosaic, stick emoji/text | ✅ (0.8.0) — app and connector `track_face` |
-| Claude can **hear** (speech → text with times) and **see** (frames) the clips | ❌ **V1** |
-| Works while phone and laptop are off | ❌ **V1** — cloud worker on GitHub Actions (free for this public repo) |
+| Claude can **hear** (speech → text with times) and **see** (frames) the clips | ✅ (0.9.0) `get_transcript`, `get_frames` |
+| Works while phone and laptop are off | ✅ (0.9.0) cloud worker on GitHub Actions (free for this public repo) |
 | Big Drive files without timeouts | ✅ (0.7.5) |
 
 ## V1 build order
 
-1. Claude can hear and see clips, and a cloud worker that renders / analyses with devices off.
+1. ~~Claude can hear and see clips; cloud worker~~ ✅ done (0.9.0).
 2. Track any object (text, sticker or mask follows it).
 3. AI music fit: song cut to the video length on the beat.
 4. Qualifier: pick a colour (skin, sky) and change only it.

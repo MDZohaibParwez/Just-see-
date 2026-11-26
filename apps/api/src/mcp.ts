@@ -16,6 +16,7 @@ import { REEL_STYLES, REEL_STYLE_BY_ID, styleGuide } from "../../../packages/eng
 import { probe, probeStored, sniffKind } from "./probe";
 import { MEDIA_KEEP_MS, STORAGE_LIMIT, type Store } from "./store";
 import { fmtBytes, monthUsage, recordUsage, usageReport, videoUsage } from "./usage";
+import { analysisState, fmtTime, queueAnalysis } from "./worker";
 
 export interface Ctx {
   store: Store;
@@ -206,6 +207,7 @@ export async function addStoredMedia(ctx: Ctx, r: Recipe, pathname: string, cont
   }
   const m = { id: `m${r.media.length + 1}${newId(4)}`, url: ctx.store.urlOf(pathname), kind, name: name.slice(0, 300), durationSec, license: null };
   r.media.push(m);
+  if (kind !== "image") await queueAnalysis(ctx.store, { recipeId: r.id, mediaId: m.id, url: m.url, name: m.name, kind });
   return m;
 }
 
@@ -260,6 +262,7 @@ export async function addMediaFromUrl(ctx: Ctx, r: Recipe, url: string, name?: s
   const m = { id, url: stored, kind, name: fileName, durationSec: p?.durationSec ?? null, license: null };
   r.media.push(m);
   await recordUsage(ctx.store, r.id, { stored: total, mediaBytes: total, calls: 1 });
+  if (kind !== "image") await queueAnalysis(ctx.store, { recipeId: r.id, mediaId: id, url: stored, name: fileName, kind });
   return m;
 }
 
@@ -274,6 +277,7 @@ export async function addMediaBytes(ctx: Ctx, r: Recipe, bytes: Uint8Array, cont
   const m = { id, url, kind, name: name.slice(0, 300), durationSec: p.durationSec, license: null };
   r.media.push(m);
   await recordUsage(ctx.store, r.id, { stored: bytes.length, mediaBytes: bytes.length, calls: 1 });
+  if (kind !== "image") await queueAnalysis(ctx.store, { recipeId: r.id, mediaId: id, url, name: m.name, kind });
   return m;
 }
 
@@ -307,7 +311,7 @@ export function buildMcpServer(ctx: Ctx): McpServer {
     { name: "just-see", version: "0.6.0" },
     {
       instructions:
-        "Just See edits videos. Clips can come from Google Drive: ask the user for the file's Share link (General access: Anyone with the link) and pass it to add_media; files up to 900 MB work. Source clips are deleted from Just See's storage after the render is saved. For popular Reels formats (anime dialogue, POV story with notification, aesthetic detail, hook + lyric montage, quote reveal, talking head + captions + CTA, scenic lyric montage, dream card, minimal lyric card) call list_styles / get_style_guide and apply_style after adding clips. Typical flow: create_video → add_media (public links) or give the user get_upload_link to add phone clips → list_media to see lengths → add_clip for each clip in order (with trims) → add_captions / add_text / add_music / add_sound_effect / add_motion_template → fit_duration if needed → render_video. Give the user the render link: opening it renders the video in their browser and saves it; then get_render returns the MP4 download link. After get_render, show the user the Cloud use lines it returns; get_usage shows this month's use. Use list_options to see sound effects, moods, transitions, effects and templates.",
+        "Just See edits videos. Clips can come from Google Drive: ask the user for the file's Share link (General access: Anyone with the link) and pass it to add_media; files up to 900 MB work. Source clips are deleted from Just See's storage after the render is saved. For popular Reels formats (anime dialogue, POV story with notification, aesthetic detail, hook + lyric montage, quote reveal, talking head + captions + CTA, scenic lyric montage, dream card, minimal lyric card) call list_styles / get_style_guide and apply_style after adding clips. Typical flow: create_video → add_media (public links) or give the user get_upload_link to add phone clips → list_media to see lengths → add_clip for each clip in order (with trims) → add_captions / add_text / add_music / add_sound_effect / add_motion_template → fit_duration if needed → render_video. Give the user the render link: opening it renders the video in their browser and saves it; then get_render returns the MP4 download link. After add_media, the cloud worker listens to and looks at each clip within a few minutes: use get_transcript (what is said, with times) and get_frames (what is on screen) to plan the edit like a human editor. After get_render, show the user the Cloud use lines it returns; get_usage shows this month's use. Use list_options to see sound effects, moods, transitions, effects and templates.",
     },
   );
 
@@ -598,6 +602,49 @@ export function buildMcpServer(ctx: Ctx): McpServer {
       const used = ctx.store.mode === "blob" ? await ctx.store.usage().catch(() => null) : null;
       const video = video_id && /^[a-z0-9]{4,40}$/.test(video_id) ? await videoUsage(ctx.store, video_id) : null;
       return text(usageReport(video, await monthUsage(ctx.store), used));
+    },
+  );
+
+  server.registerTool(
+    "get_transcript",
+    {
+      title: "Hear a clip",
+      description:
+        "What is said in a video or audio clip, as text with times (Hindi, English, Hinglish, Urdu and more). Clips are listened to automatically by the cloud worker a few minutes after add_media; call this to read it. Use it to choose the best lines, cut silences, place captions or B-roll on the right words.",
+      inputSchema: { video_id: z.string(), media_id: z.string() },
+    },
+    async ({ video_id, media_id }) => {
+      if (!/^[a-z0-9]{4,40}$/.test(video_id) || !/^[a-z0-9]{2,40}$/.test(media_id)) return fail("Bad id");
+      const { job, result } = await analysisState(ctx.store, video_id, media_id);
+      if (!result) return text(job?.status === "failed" ? `Could not listen to this clip: ${job.error ?? "unknown error"}` : job ? "Not listened to yet: the cloud worker checks every few minutes. Try again in a few minutes." : "This clip has no audio to listen to, or it was added before listening was available.");
+      if (!result.transcript.length) return text("No speech found in this clip (music or silence only).");
+      const head = `Language: ${result.language ?? "?"}. ${result.listenedSec && result.durationSec && result.listenedSec < result.durationSec - 1 ? `Listened to the first ${fmtTime(result.listenedSec)} of ${fmtTime(result.durationSec)}.` : ""}`;
+      return text([head, ...result.transcript.map((s) => `[${fmtTime(s.start)}–${fmtTime(s.end)}] ${s.text.trim()}`)].join("\n"));
+    },
+  );
+
+  server.registerTool(
+    "get_frames",
+    {
+      title: "See a clip",
+      description: "Still frames from a video clip (up to 12, spread over the clip) with their times, so you can see what is on screen: people, place, text, light, shot type. Ready a few minutes after add_media.",
+      inputSchema: { video_id: z.string(), media_id: z.string(), max: z.number().int().min(1).max(12).default(6) },
+    },
+    async ({ video_id, media_id, max }) => {
+      if (!/^[a-z0-9]{4,40}$/.test(video_id) || !/^[a-z0-9]{2,40}$/.test(media_id)) return fail("Bad id");
+      const { job, result } = await analysisState(ctx.store, video_id, media_id);
+      if (!result) return text(job?.status === "failed" ? `Could not look at this clip: ${job.error ?? "unknown error"}` : "Not looked at yet: the cloud worker checks every few minutes. Try again in a few minutes.");
+      if (!result.frames.length) return text("No frames (audio-only clip).");
+      const step = Math.max(1, Math.ceil(result.frames.length / max));
+      const picked = result.frames.filter((_, i) => i % step === 0).slice(0, max);
+      const content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[] = [];
+      for (const f of picked) {
+        const bytes = await ctx.store.readRange(f.path, 0, 512 * 1024).catch(() => null);
+        if (!bytes?.length) continue;
+        content.push({ type: "text", text: `Frame at ${fmtTime(f.t)}` });
+        content.push({ type: "image", data: Buffer.from(bytes).toString("base64"), mimeType: "image/jpeg" });
+      }
+      return content.length ? { content } : text("Frames are no longer available.");
     },
   );
 

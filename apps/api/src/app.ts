@@ -8,6 +8,7 @@ import { RenderJobSchema, type RenderJob } from "@just-see/schema";
 import { MAX_BYTES, addStoredMedia, buildMcpServer, links, loadRecipe, newId, saveRecipe, type Ctx } from "./mcp";
 import { FsStore, assertSafePath, maybeCleanup } from "./store";
 import { recordUsage, videoUsage } from "./usage";
+import { nextWork, peek, saveAnalysis, workerKey } from "./worker";
 
 const MAX_JSON = 1024 * 1024;
 
@@ -36,11 +37,11 @@ async function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-async function readJson<T>(req: IncomingMessage): Promise<T> {
+async function readJson<T>(req: IncomingMessage, limit = MAX_JSON): Promise<T> {
   // Vercel may have parsed the body already.
   const pre = (req as IncomingMessage & { body?: unknown }).body;
   if (pre !== undefined && pre !== null && typeof pre === "object" && !Buffer.isBuffer(pre)) return pre as T;
-  const raw = Buffer.isBuffer(pre) ? pre : typeof pre === "string" ? Buffer.from(pre) : await readBody(req, MAX_JSON);
+  const raw = Buffer.isBuffer(pre) ? pre : typeof pre === "string" ? Buffer.from(pre) : await readBody(req, limit);
   return (raw.length ? JSON.parse(raw.toString("utf8")) : {}) as T;
 }
 
@@ -209,6 +210,20 @@ export async function handle(req: IncomingMessage, res: ServerResponse, ctx: Ctx
         }
         return send(res, 200, { ok: true });
       }
+    }
+
+    // Cloud worker (GitHub Actions): /api/worker/peek, /next, /analysis/<recipe>/<media>
+    if (route === "worker") {
+      const key = workerKey();
+      if (!key || req.headers["x-worker-key"] !== key) return send(res, 401, { error: "Wrong worker key" });
+      if (req.method === "GET" && id === "peek") return send(res, 200, await peek(ctx.store));
+      if (req.method === "POST" && id === "next") return send(res, 200, await nextWork(ctx.store, ctx.webBase, ctx.apiBase));
+      if (req.method === "POST" && id === "analysis" && sub && parts[4] && /^[a-z0-9]{4,40}$/.test(sub) && /^[a-z0-9]{2,40}$/.test(parts[4])) {
+        const b = await readJson<Parameters<typeof saveAnalysis>[3]>(req, 12 * 1024 * 1024);
+        const r = await saveAnalysis(ctx.store, sub, parts[4], b);
+        return send(res, 200, { ok: true, frames: r?.frames.length ?? 0, segments: r?.transcript.length ?? 0 });
+      }
+      return send(res, 404, { error: "Not found" });
     }
 
     // MCP connector: /api/mcp/<key>

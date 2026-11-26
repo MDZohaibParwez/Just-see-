@@ -186,4 +186,34 @@ describe("connector (MCP)", () => {
     expect(saved.message).toBe("x is undefined");
     expect(saved.note).toBe("exporting");
   });
+
+  it("cloud worker: picks up a clip, and Claude can then hear and see it", async () => {
+    process.env.WORKER_KEY = "wk-test";
+    const H = { "x-worker-key": "wk-test" };
+    expect((await fetch(`${apiBase}/api/worker/peek`)).status).toBe(401);
+    const c = await client();
+    const id = /Created video ([a-z0-9]+)/.exec(textOf(await c.callTool({ name: "create_video", arguments: {} })))![1]!;
+    const m = /Added video (m\w+)/.exec(textOf(await c.callTool({ name: "add_media", arguments: { video_id: id, url: `${fileBase}/clip1.mp4` } })))![1]!;
+    expect(textOf(await c.callTool({ name: "get_transcript", arguments: { video_id: id, media_id: m } }))).toContain("Not listened to yet");
+    // Drain older jobs from other tests until ours comes up.
+    let work: { kind: string; recipeId?: string; mediaId?: string; url?: string } = { kind: "none" };
+    for (let i = 0; i < 20; i++) {
+      work = (await (await fetch(`${apiBase}/api/worker/next`, { method: "POST", headers: H })).json()) as typeof work;
+      if (work.kind === "none" || (work.kind === "analyze" && work.mediaId === m)) break;
+    }
+    expect(work).toMatchObject({ kind: "analyze", recipeId: id, mediaId: m });
+    expect(work.url).toContain(`/media/${id}/`);
+    // A tiny JPEG-shaped payload; the second frame is not a JPEG and is dropped.
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 0xff, 0xd9]).toString("base64");
+    const post = await fetch(`${apiBase}/api/worker/analysis/${id}/${m}`, {
+      method: "POST",
+      headers: H,
+      body: JSON.stringify({ language: "hi", transcript: [{ start: 0.5, end: 2.2, text: "Namaste dosto" }], frames: [{ t: 1, jpeg }, { t: 2, jpeg: "bm90IGEganBlZw==" }], listenedSec: 12.1, durationSec: 12.1 }),
+    });
+    expect(await post.json()).toMatchObject({ ok: true, frames: 1, segments: 1 });
+    expect(textOf(await c.callTool({ name: "get_transcript", arguments: { video_id: id, media_id: m } }))).toContain("[0:00.5–0:02.2] Namaste dosto");
+    const frames = (await c.callTool({ name: "get_frames", arguments: { video_id: id, media_id: m } })) as { content: { type: string; mimeType?: string }[] };
+    expect(frames.content.some((x) => x.type === "image" && x.mimeType === "image/jpeg")).toBe(true);
+    await c.close();
+  });
 });
