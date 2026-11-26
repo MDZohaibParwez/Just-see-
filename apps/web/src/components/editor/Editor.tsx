@@ -34,6 +34,7 @@ const SfxPanel = lazy(() => import("./AudioPanels").then((m) => ({ default: m.Sf
 const StudioScreen = lazy(() => import("./StudioScreen").then((m) => ({ default: m.StudioScreen })));
 const MotionScreen = lazy(() => import("./MotionScreen").then((m) => ({ default: m.MotionScreen })));
 const LibraryScreen = lazy(() => import("./LibraryScreen").then((m) => ({ default: m.LibraryScreen })));
+const FacePanel = lazy(() => import("./FacePanel").then((m) => ({ default: m.FacePanel })));
 const LivePanel = lazy(() => import("./LivePanel").then((m) => ({ default: m.LivePanel })));
 
 function PanelLoading() {
@@ -188,6 +189,8 @@ function PanelBody() {
       return <ExportPanel />;
     case "history":
       return <HistoryPanel />;
+    case "face":
+      return <FacePanel />;
     default:
       return null;
   }

@@ -37,6 +37,7 @@ export type Panel =
   | "canvas"
   | "export"
   | "history"
+  | "face"
   | null;
 
 export interface Toast {

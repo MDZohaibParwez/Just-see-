@@ -64,6 +64,14 @@ export const RecipeOpSchema = z.discriminatedUnion("op", [
   }),
   z.object({ op: z.literal("sfx"), id: z.string().min(1).max(60), atSec: Sec }),
   z.object({ op: z.literal("effect"), clipIndex: z.number().int().min(0).max(999), type: z.string().min(1).max(60) }),
+  /** Face tracking on a main-track clip: follow (zoom + move with the face), blur / mosaic the face, or stick an emoji or short text to it. */
+  z.object({
+    op: z.literal("face"),
+    clipIndex: z.number().int().min(0).max(999),
+    mode: z.enum(["follow", "blur", "mosaic", "stick"]),
+    zoom: z.number().min(0.5).max(3).default(1),
+    sticker: z.string().min(1).max(40).default("😎"),
+  }),
   z.object({ op: z.literal("voice"), clipIndex: z.number().int().min(-1).max(999).default(-1) }),
   z.object({
     op: z.literal("motion"),

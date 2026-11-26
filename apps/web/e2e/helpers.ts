@@ -8,7 +8,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const FIXTURES = path.join(HERE, "fixtures");
 
 export function ensureFixtures(): void {
-  if (!fs.existsSync(path.join(FIXTURES, "clip5.mp4")) || !fs.existsSync(path.join(FIXTURES, "photo.png")) || !fs.existsSync(path.join(FIXTURES, "greenscreen.mp4")) || !fs.existsSync(path.join(FIXTURES, "gap.mp3")) || !fs.existsSync(path.join(FIXTURES, "noisy-voice.mp4")) || !fs.existsSync(path.join(FIXTURES, "shaky.mp4"))) {
+  if (!fs.existsSync(path.join(FIXTURES, "clip5.mp4")) || !fs.existsSync(path.join(FIXTURES, "photo.png")) || !fs.existsSync(path.join(FIXTURES, "greenscreen.mp4")) || !fs.existsSync(path.join(FIXTURES, "gap.mp3")) || !fs.existsSync(path.join(FIXTURES, "noisy-voice.mp4")) || !fs.existsSync(path.join(FIXTURES, "shaky.mp4")) || !fs.existsSync(path.join(FIXTURES, "face.mp4"))) {
     execFileSync("bash", [path.join(HERE, "make-fixtures.sh")], { stdio: "inherit" });
   }
 }

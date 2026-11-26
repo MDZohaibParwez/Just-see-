@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0 — Face tracking (CapCut-style)
+
+### Added
+
+- **Face** tool on every video clip: **Follow face** (zooms in and moves with the face, frame by frame at 12 samples a second), **Blur face**, **Mosaic face** (the mask moves with the face), **Stick to face** (an emoji or text rides above the head).
+- Smooth tracking: short misses glide between known positions, long ones hold the last position, the same person is kept when several faces are in frame.
+- Connector tool `track_face` (follow / blur / mosaic / stick), also when rendering from a recipe.
+- Face model: MediaPipe BlazeFace (Apache-2.0), runs on the device.
+
 ## 0.7.5 — Big downloads never time out
 
 ### Fixed

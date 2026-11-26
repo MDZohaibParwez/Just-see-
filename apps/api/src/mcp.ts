@@ -462,6 +462,23 @@ export function buildMcpServer(ctx: Ctx): McpServer {
   );
 
   server.registerTool(
+    "track_face",
+    {
+      title: "Face tracking",
+      description:
+        "Track the face in a clip (clip_index 0 = first clip), CapCut-style. follow: zoom in and move so the face stays centred while the person moves (talking heads, vlogs, interviews). blur / mosaic: hide a face that should stay private. stick: an emoji or short text that follows the face (sticker = '👑', '😂', 'Me' …). zoom: 1 = face fills about a third of the frame height.",
+      inputSchema: {
+        video_id: z.string(),
+        clip_index: z.number().int().min(0),
+        mode: z.enum(["follow", "blur", "mosaic", "stick"]).default("follow"),
+        zoom: z.number().min(0.5).max(3).default(1),
+        sticker: z.string().min(1).max(40).default("😎"),
+      },
+    },
+    async (a) => addOp(ctx, a.video_id, { op: "face", clipIndex: a.clip_index, mode: a.mode, zoom: a.zoom, sticker: a.sticker }),
+  );
+
+  server.registerTool(
     "enhance_voice",
     { title: "Studio voice", description: "Clean up speech (noise, hum, level to -14 LUFS) on one clip or all (clip_index -1).", inputSchema: { video_id: z.string(), clip_index: z.number().int().min(-1).default(-1) } },
     async (a) => addOp(ctx, a.video_id, { op: "voice", clipIndex: a.clip_index }),

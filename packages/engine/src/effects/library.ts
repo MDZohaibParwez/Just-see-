@@ -347,6 +347,29 @@ const keying: EffectDef[] = [
         return src(uv) * m; }`,
   },
   {
+    // Face tracking uses these: blur or mosaic only inside a moving ellipse
+    // (keyframe x, y, w, h to follow a face; CapCut-style face blur).
+    type: "face-blur",
+    label: "Face blur",
+    category: "blur",
+    params: [p("x", "Centre X", 0, 1, 0.5), p("y", "Centre Y", 0, 1, 0.4), p("w", "Width", 0.02, 1.5, 0.25), p("h", "Height", 0.02, 1.5, 0.3), p("amount", "Strength", 0, 1, 0.8), p("feather", "Feather", 0, 0.3, 0.04)],
+    glsl: `vec4 effect(vec2 uv){ vec4 c = src(uv); vec2 q = (uv - vec2(p_x, p_y)) / (vec2(p_w, p_h) * 0.5); float d = (length(q) - 1.0) * min(p_w, p_h) * 0.5; float m = 1.0 - smoothstep(-p_feather, p_feather + 0.0001, d); if (m <= 0.0) return c;
+      float r = (0.1 + p_amount * 0.4) * min(p_w, p_h); vec4 acc = vec4(0.0); float n = 0.0;
+      for (int i = -3; i <= 3; i++) { for (int j = -3; j <= 3; j++) { vec2 o = vec2(float(i), float(j)) / 3.0 * r * vec2(1.0 / aspect(), 1.0); acc += src(uv + o); n += 1.0; } }
+      return mix(c, acc / n, m); }`,
+  },
+  {
+    // Blocks sized to the face (size = fraction of the face width), so features can't be read.
+    type: "face-mosaic",
+    label: "Face mosaic",
+    category: "blur",
+    params: [p("x", "Centre X", 0, 1, 0.5), p("y", "Centre Y", 0, 1, 0.4), p("w", "Width", 0.02, 1.5, 0.25), p("h", "Height", 0.02, 1.5, 0.3), p("size", "Block size", 0.05, 0.5, 0.2, 0.01), p("feather", "Feather", 0, 0.3, 0.02)],
+    glsl: `vec4 effect(vec2 uv){ vec4 c = src(uv); vec2 q = (uv - vec2(p_x, p_y)) / (vec2(p_w, p_h) * 0.5); float d = (length(q) - 1.0) * min(p_w, p_h) * 0.5; float m = 1.0 - smoothstep(-p_feather, p_feather + 0.0001, d); if (m <= 0.0) return c;
+      vec2 cell = vec2(p_size * p_w); cell.y *= aspect(); vec2 base = floor(uv / cell) * cell; vec4 acc = vec4(0.0);
+      for (int i = 0; i < 4; i++) { for (int j = 0; j < 4; j++) { acc += src(base + (vec2(float(i), float(j)) + 0.5) / 4.0 * cell); } }
+      return mix(c, acc / 16.0, m); }`,
+  },
+  {
     type: "mask-linear",
     label: "Linear mask",
     category: "key",

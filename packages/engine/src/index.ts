@@ -34,4 +34,5 @@ export * from "./motion/lottie";
 export * from "./library/fonts";
 export * from "./library/search";
 export * from "./analysis/stabilize";
+export * from "./analysis/face-track";
 export * from "./styles/reel-styles";

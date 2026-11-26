@@ -110,6 +110,8 @@ export function Toolbar({ onImport, onImportMusic }: { onImport: () => void; onI
     if (c.kind === "video" && project && isWideIntoTall(project, c.assetId)) {
       tools.push({ id: "reframe", icon: "canvas", label: "autoReframe", run: () => void autoReframe(c.id) });
     }
+    // Face tracking works on any video clip.
+    if (c.kind === "video") tools.push({ id: "face", icon: "eye", label: "faceTool", run: open("face") });
     tools.push({ id: "select-more", icon: "dots", label: "selectMore", run: () => useEditor.getState().setMultiMode(true) });
     tools.push({ id: "duplicate", icon: "duplicate", label: "duplicate", run: duplicateSelection });
     tools.push({ id: "delete", icon: "trash", label: "delete", run: deleteSelection, danger: true });

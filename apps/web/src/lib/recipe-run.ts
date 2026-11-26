@@ -11,6 +11,7 @@ import {
   createMediaClip,
   createProject,
   createTextClip,
+  isMediaClip,
   getSequence,
   type Command,
   type MediaClip,
@@ -134,6 +135,22 @@ export async function buildRecipe(recipe: Recipe, onStep: (s: Step) => void = ()
         step("Adding effect");
         const c = mainClips()[op.clipIndex];
         if (c) dispatch({ type: "clip/addEffect", payload: { clipId: c.id, effect: { id: createId("fx_"), type: op.type, enabled: true, params: {} } } }, "effect");
+        break;
+      }
+      case "face": {
+        step("Tracking the face");
+        const c = mainClips()[op.clipIndex];
+        if (!c || !isMediaClip(c) || c.kind !== "video") break;
+        const { applyFace } = await import("./face");
+        let targetId: string | undefined;
+        if (op.mode === "stick") {
+          targetId = createId("c_");
+          const t = createTextClip({ id: targetId, text: op.sticker, startUs: c.startUs, durationUs: c.durationUs });
+          t.style = { ...t.style, fontSize: 0.09 };
+          dispatch({ type: "clip/add", payload: { clip: t, trackType: "text", newTrackId: createId("t_") } }, "sticker");
+        }
+        // A missing face must not stop the whole video.
+        await applyFace(c.id, op.mode, { zoom: op.zoom, targetId }).catch((e: unknown) => console.warn("Face tracking skipped", e));
         break;
       }
       case "voice": {
