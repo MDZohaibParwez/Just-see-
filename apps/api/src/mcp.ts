@@ -23,6 +23,38 @@ export interface Ctx {
   webBase: string;
   /** This API, e.g. https://just-see-api.vercel.app */
   apiBase: string;
+  /** Keep work running after the reply is sent (Vercel waitUntil). Default: run without waiting. */
+  background?: (work: Promise<unknown>) => void;
+}
+
+/** A download still running in the background (stored next to the clips, deleted with them). */
+interface Pending {
+  id: string;
+  name: string;
+  sizeBytes: number | null;
+  status: "downloading" | "ready" | "failed";
+  media?: Recipe["media"][number];
+  error?: string;
+  startedAt: number;
+}
+
+const pendingPath = (rid: string, mid: string) => `media/${rid}/pending-${mid}.json`;
+
+/** Move finished background downloads into the recipe; returns ones still running or failed. */
+async function absorbPending(ctx: Ctx, r: Recipe): Promise<Pending[]> {
+  const files = (await ctx.store.list(`media/${r.id}/`).catch(() => [] as string[])).filter((f) => /\/pending-[a-z0-9]+\.json$/.test(f));
+  const left: Pending[] = [];
+  for (const f of files) {
+    const p = await ctx.store.getJson<Pending>(f);
+    if (!p) continue;
+    if (p.status === "ready" && p.media) {
+      if (!r.media.some((m) => m.id === p.media!.id)) r.media.push(p.media);
+      await ctx.store.deletePrefix(f).catch(() => 0);
+    } else {
+      left.push(p);
+    }
+  }
+  return left;
 }
 
 export const newId = (n = 10) => randomBytes(n).toString("base64url").replace(/[-_]/g, "").slice(0, n).toLowerCase() || "x";
@@ -248,6 +280,7 @@ export async function addMediaBytes(ctx: Ctx, r: Recipe, bytes: Uint8Array, cont
 async function withRecipe(ctx: Ctx, id: string, fn: (r: Recipe) => Promise<string> | string) {
   const r = await loadRecipe(ctx.store, id);
   if (!r) return fail(`No video with id "${id}". Create one with create_video first.`);
+  await absorbPending(ctx, r);
   try {
     const msg = await fn(r);
     await saveRecipe(ctx.store, r);
@@ -303,6 +336,28 @@ export function buildMcpServer(ctx: Ctx): McpServer {
     async ({ video_id, url, name, kind }) =>
       withRecipe(ctx, video_id, async (r) => {
         const t0 = Date.now();
+        // Big files (or unknown size) download in the background: the reply
+        // comes at once, so Claude's 60 s tool timeout is never hit.
+        const peek = await openDownload(url);
+        await peek.res.body?.cancel().catch(() => undefined);
+        if (peek.size === null || peek.size > SMALL_BYTES) {
+          const mid = newId(6);
+          const pending: Pending = { id: mid, name: (name ?? peek.name).slice(0, 300), sizeBytes: peek.size, status: "downloading", startedAt: t0 };
+          await ctx.store.putJson(pendingPath(r.id, mid), pending);
+          const work = (async () => {
+            const scratch: Recipe = { ...r, media: [] };
+            try {
+              const m = await addMediaFromUrl(ctx, scratch, url, name, kind);
+              await recordUsage(ctx.store, r.id, { downloaded: peek.size ?? 0, serverMs: Date.now() - t0 });
+              await ctx.store.putJson(pendingPath(r.id, mid), { ...pending, status: "ready", media: m });
+            } catch (e) {
+              await ctx.store.putJson(pendingPath(r.id, mid), { ...pending, status: "failed", error: e instanceof Error ? e.message : String(e) });
+            }
+          })();
+          (ctx.background ?? ((w: Promise<unknown>) => void w))(work);
+          const mb = peek.size ? `${Math.round(peek.size / MB)} MB` : "size unknown";
+          return `Downloading "${pending.name}" (${mb}) in the background. Call list_media in about ${Math.max(1, Math.ceil((peek.size ?? 300 * MB) / (20 * MB) / 60))} minute(s) to get its media id and length.`;
+        }
         const before = (await videoUsage(ctx.store, r.id)).mediaBytes;
         const m = await addMediaFromUrl(ctx, r, url, name, kind);
         const size = (await videoUsage(ctx.store, r.id)).mediaBytes - before;
@@ -321,11 +376,19 @@ export function buildMcpServer(ctx: Ctx): McpServer {
     },
   );
 
-  server.registerTool("list_media", { title: "List media", description: "Media in the project with ids, types and lengths.", inputSchema: { video_id: z.string() } }, async ({ video_id }) => {
+  server.registerTool("list_media", { title: "List media", description: "Media in the project with ids, types and lengths, plus downloads still running.", inputSchema: { video_id: z.string() } }, async ({ video_id }) => {
     const r = await loadRecipe(ctx.store, video_id);
     if (!r) return fail("Unknown video id");
-    if (!r.media.length) return text("No media yet. Use add_media or get_upload_link.");
-    return text(r.media.map((m) => `${m.id}: ${m.kind} "${m.name}"${m.durationSec != null ? `, ${m.durationSec.toFixed(2)} s` : ""}`).join("\n"));
+    const before = r.media.length;
+    const pending = await absorbPending(ctx, r);
+    if (r.media.length !== before) await saveRecipe(ctx.store, r);
+    const lines = r.media.map((m) => `${m.id}: ${m.kind} "${m.name}"${m.durationSec != null ? `, ${m.durationSec.toFixed(2)} s` : ""}`);
+    for (const p of pending) {
+      const mins = ((Date.now() - p.startedAt) / 60000).toFixed(1);
+      lines.push(p.status === "failed" ? `(failed) "${p.name}": ${p.error ?? "unknown error"}` : `(downloading, ${mins} min so far) "${p.name}"${p.sizeBytes ? ` ${Math.round(p.sizeBytes / MB)} MB` : ""}`);
+    }
+    if (!lines.length) return text("No media yet. Use add_media or get_upload_link.");
+    return text(lines.join("\n"));
   });
 
   server.registerTool(

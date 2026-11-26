@@ -2,6 +2,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { handle } from "./app";
 import { storeFromEnv } from "./store";
+import { waitUntil } from "@vercel/functions";
 
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const host = (req.headers["x-forwarded-host"] as string | undefined) ?? req.headers.host ?? "localhost";
@@ -21,5 +22,5 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     res.end(JSON.stringify({ error: (e as Error).message }));
     return;
   }
-  await handle(req, res, { store, webBase, apiBase }, pathname);
+  await handle(req, res, { store, webBase, apiBase, background: (w) => waitUntil(w) }, pathname);
 }

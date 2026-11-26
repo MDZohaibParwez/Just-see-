@@ -96,3 +96,9 @@ commercial ones. Sounds a user imports are stored with the licence
 `user-upload` and stay in that user's project.
 The icon set (`packages/ui/src/icons.tsx`) and app icon are original work for
 this project. Text uses the device's system fonts unless the user picks a Google Font.
+
+### Added in 0.7.5 (API)
+
+| Package | Version | License | Used for |
+| --- | --- | --- | --- |
+| [@vercel/functions](https://github.com/vercel/vercel/tree/main/packages/functions) | 2.2.13 | Apache-2.0 | `waitUntil` so big downloads continue after the connector's reply |

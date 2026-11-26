@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.5 — Big downloads never time out
+
+### Fixed
+
+- `add_media` with a big file (or a host that doesn't send the size) answers at once and downloads in the background (Vercel `waitUntil`); `list_media` shows "downloading…" and then the clip. Claude's 60 s tool timeout cut off a 568 MB Drive download before.
+
 ## 0.7.4 — Cloud usage in connector replies
 
 ### Added

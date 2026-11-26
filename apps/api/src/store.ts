@@ -15,6 +15,8 @@ export interface Store {
   urlOf(pathname: string): string;
   /** Bytes start..end-1 of a stored file. */
   readRange(pathname: string, start: number, end: number): Promise<Uint8Array>;
+  /** Paths of stored files under a folder. */
+  list(prefix: string): Promise<string[]>;
   /** Size of a stored file in bytes. */
   sizeOf(pathname: string): Promise<number>;
   /** Total bytes stored. */
@@ -131,6 +133,25 @@ export class FsStore implements Store {
   async sizeOf(p: string): Promise<number> {
     return (await fs.stat(this.file(p))).size;
   }
+  async list(prefix: string): Promise<string[]> {
+    const out: string[] = [];
+    const base = this.file(prefix.replace(/\/+$/, ""));
+    const walk = async (d: string): Promise<void> => {
+      let entries: import("node:fs").Dirent[];
+      try {
+        entries = await fs.readdir(d, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of entries) {
+        const f = path.join(d, e.name);
+        if (e.isDirectory()) await walk(f);
+        else out.push(path.relative(this.dir, f).split(path.sep).join("/"));
+      }
+    };
+    await walk(base);
+    return out;
+  }
   async usage(): Promise<number> {
     let total = 0;
     const walk = async (d: string): Promise<void> => {
@@ -224,6 +245,17 @@ export class BlobStore implements Store {
     const res = await fetch(this.urlOf(p), { headers: { range: `bytes=${start}-${end - 1}` } });
     if (!res.ok) throw new Error(`Could not read stored file (${res.status})`);
     return new Uint8Array(await res.arrayBuffer());
+  }
+  async list(prefix: string): Promise<string[]> {
+    const { list } = await import("@vercel/blob");
+    const out: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await list({ token: this.token, prefix: assertSafePath(prefix), cursor, limit: 1000 });
+      out.push(...page.blobs.map((b) => b.pathname));
+      cursor = page.hasMore ? page.cursor : undefined;
+    } while (cursor);
+    return out;
   }
   async sizeOf(p: string): Promise<number> {
     const { head } = await import("@vercel/blob");

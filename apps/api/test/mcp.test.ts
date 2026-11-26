@@ -27,7 +27,9 @@ beforeAll(async () => {
     if (req.url === "/private") return void res.writeHead(200, { "content-type": "text/html" }).end("<html>sign in</html>");
     const f = path.join(FIX, path.basename(req.url ?? ""));
     if (!fs.existsSync(f)) return void res.writeHead(404).end();
-    res.writeHead(200, { "content-type": f.endsWith(".mp4") ? "video/mp4" : f.endsWith(".png") ? "image/png" : "audio/mpeg" });
+    // /nolen/… : no content-length (like some hosts), which takes the background path.
+    const len = req.url?.startsWith("/nolen/") ? {} : { "content-length": String(fs.statSync(f).size) };
+    res.writeHead(200, { "content-type": f.endsWith(".mp4") ? "video/mp4" : f.endsWith(".png") ? "image/png" : "audio/mpeg", ...len });
     fs.createReadStream(f).pipe(res);
   });
   fileBase = await listen(files);
@@ -125,9 +127,11 @@ describe("connector (MCP)", () => {
   it("streams files without a known size, refuses over 900 MB and explains private links", async () => {
     const c = await client();
     const id = /Created video ([a-z0-9]+)/.exec(textOf(await c.callTool({ name: "create_video", arguments: {} })))![1]!;
-    // The test file server sends no content-length, so this takes the streaming path.
-    const ok = textOf(await c.callTool({ name: "add_media", arguments: { video_id: id, url: `${fileBase}/clip2.mp4` } }));
-    expect(ok).toMatch(/Added video m\w+ .*\(12\.\d+ s\)/);
+    // No content-length: streamed in the background; list_media shows it when done.
+    const bg = textOf(await c.callTool({ name: "add_media", arguments: { video_id: id, url: `${fileBase}/nolen/clip2.mp4` } }));
+    expect(bg).toContain("in the background");
+    await expect.poll(async () => textOf(await c.callTool({ name: "list_media", arguments: { video_id: id } })), { timeout: 20_000 }).toMatch(/m\w+: video "clip2\.mp4", 12\.\d+ s/);
+    expect(textOf(await c.callTool({ name: "get_video", arguments: { video_id: id } }))).toContain("Media (1)");
     const huge = await c.callTool({ name: "add_media", arguments: { video_id: id, url: `${fileBase}/huge.mp4` } });
     expect((huge as { isError?: boolean }).isError).toBe(true);
     expect(textOf(huge)).toContain("limit is 900 MB");
